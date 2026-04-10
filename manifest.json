@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "AI划词问答助手",
+  "version": "1.0",
+  "description": "划词问答、改写、总结、页面对话，带流式输出",
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage", "sidePanel"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["style.css"]
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/*", "sidepanel.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "action": {
+    "default_title": "打开 AI 问答助手"
+  }
+}
