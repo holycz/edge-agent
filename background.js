@@ -6,13 +6,18 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ["selection"]
   });
   chrome.contextMenus.create({
-    id: "ai-rewrite",
-    title: "文字改写",
+    id: "ai-summarize",
+    title: "总结",
     contexts: ["selection"]
   });
   chrome.contextMenus.create({
-    id: "ai-summarize",
-    title: "内容总结",
+    id: "ai-rewrite",
+    title: "润色改写",
+    contexts: ["selection"]
+  });
+  chrome.contextMenus.create({
+    id: "ai-proofread",
+    title: "稽核（检查语句通顺、错别字）",
     contexts: ["selection"]
   });
 });
@@ -23,14 +28,34 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!text || !tab.id) return;
 
   let prompt = "";
-  if (info.menuItemId === "ai-ask") prompt = `回答问题：${text}`;
-  if (info.menuItemId === "ai-rewrite") prompt = `改写文字，保持原意：${text}`;
-  if (info.menuItemId === "ai-summarize") prompt = `总结内容：${text}`;
+  let action = "";
+  
+  if (info.menuItemId === "ai-ask") {
+    action = "ask";
+    prompt = text;
+  }
+  if (info.menuItemId === "ai-summarize") {
+    action = "summarize";
+    prompt = `请对以下内容进行总结，提炼核心要点：\n\n${text}`;
+  }
+  if (info.menuItemId === "ai-rewrite") {
+    action = "rewrite";
+    prompt = `请对以下内容进行润色改写，保持原意但让表达更流畅、专业：\n\n${text}`;
+  }
+  if (info.menuItemId === "ai-proofread") {
+    action = "proofread";
+    prompt = `请对以下内容进行稽核检查，找出语句不通顺的地方和错别字，并给出修改建议：\n\n${text}`;
+  }
 
   try {
     // 存储问题，等侧边栏打开后处理
-    await chrome.storage.session.set({ pendingQuestion: prompt });
-    console.log("[Background] 已存储问题:", prompt);
+    // 存储action类型，用于区分是划词引用还是直接提问
+    await chrome.storage.session.set({ 
+      pendingQuestion: prompt,
+      pendingAction: action,
+      pendingSelectedText: text
+    });
+    console.log("[Background] 已存储问题:", prompt, "动作:", action);
     
     // 打开侧边栏
     await chrome.sidePanel.open({ windowId: tab.windowId });

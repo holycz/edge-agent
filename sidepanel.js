@@ -42,8 +42,8 @@ async function init() {
 
 // 处理 storage 变化
 function handleStorageChange(changes, namespace) {
-  if (namespace === 'session' && changes.pendingQuestion?.newValue) {
-    console.log("[Sidepanel] 检测到待处理问题变化");
+  if (namespace === 'session' && (changes.pendingQuestion?.newValue || changes.pendingAction?.newValue)) {
+    console.log("[Sidepanel] 检测到待处理数据变化");
     checkPendingQuestion();
   }
 }
@@ -56,16 +56,39 @@ async function checkPendingQuestion() {
   }
   
   try {
-    const result = await chrome.storage.session.get('pendingQuestion');
-    console.log("[Sidepanel] 获取到待处理问题:", result);
+    const result = await chrome.storage.session.get(['pendingQuestion', 'pendingAction', 'pendingSelectedText']);
+    console.log("[Sidepanel] 获取到待处理数据:", result);
     
     if (result.pendingQuestion) {
       isProcessingPending = true;
       const question = result.pendingQuestion;
-      await chrome.storage.session.remove('pendingQuestion');
-      console.log("[Sidepanel] 处理待处理问题:", question);
-      addMessage('user', question);
-      await askAI(question);
+      const action = result.pendingAction;
+      const selectedText = result.pendingSelectedText;
+      
+      // 清除存储的数据
+      await chrome.storage.session.remove(['pendingQuestion', 'pendingAction', 'pendingSelectedText']);
+      
+      console.log("[Sidepanel] 处理待处理问题:", question, "动作:", action);
+      
+      // 根据动作类型处理
+      if (action === 'ask') {
+        // AI问答：直接填入输入框并引用划词内容
+        if (selectedText) {
+          inputTextarea.value = `请回答关于这段文字的问题：\n\n「${selectedText}」\n\n`;
+          inputTextarea.focus();
+          // 自动调整高度
+          inputTextarea.style.height = 'auto';
+          inputTextarea.style.height = Math.min(inputTextarea.scrollHeight, 120) + 'px';
+          // 将光标移到末尾
+          inputTextarea.setSelectionRange(inputTextarea.value.length, inputTextarea.value.length);
+        }
+      } else {
+        // 总结、改写、稽核：直接发送请求
+        addMessage('user', action === 'summarize' ? '请总结以下内容' : 
+                         action === 'rewrite' ? '请润色改写以下内容' : '请稽核检查以下内容');
+        addMessage('user', `「${selectedText}」`);
+        await askAI(question);
+      }
     }
   } catch (e) {
     console.error("[Sidepanel] 检查待处理问题失败:", e);
