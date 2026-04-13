@@ -6,8 +6,92 @@ const DEFAULT_CONFIG = {
   temperature: 0.7,
   maxTokens: 2048,
   useContext: true, // 默认启用网页上下文
-  contextLength: 5000, // 上下文最大字符数
-  enableDoubleClick: false // 默认关闭双击唤醒
+  contextLength: 8000, // 上下文最大字符数（增加到8000，但会受maxTotalChars限制）
+  enableDoubleClick: false, // 默认关闭双击唤醒
+  maxTotalChars: 25000, // 单次请求总字符数上限
+  maxHistoryRounds: 5 // 最大保留的对话轮数
+};
+
+// 功能提示词模板
+const FEATURE_PROMPTS = {
+  summarize: {
+    label: '总结',
+    icon: '📝',
+    systemPrompt: `你是一位专业的内容总结专家。请对用户提供的文本进行深度总结，要求：
+
+1. **核心要点提炼**：提取文本的主要观点、关键结论和重要信息
+2. **结构化呈现**：使用清晰的层次结构（如要点列表、层级标题）
+3. **保留关键细节**：保留重要的数据、时间、人名、地点等关键信息
+4. **逻辑清晰**：确保总结内容逻辑连贯，易于理解
+5. **简洁准确**：在不丢失重要信息的前提下，尽可能精简表达
+
+请用中文输出，采用 Markdown 格式，包含：
+- 一句话概括（放在最前面，加粗显示）
+- 核心要点（3-5个 bullet points）
+- 详细总结（如有必要）
+
+原始文本如下：`,
+    userDisplay: (text) => `「${text.substring(0, 30)}${text.length > 30 ? '...' : ''}」`
+  },
+  
+  rewrite: {
+    label: '润色改写',
+    icon: '✨',
+    systemPrompt: `你是一位资深的文字编辑和写作专家。请对用户提供的文本进行润色改写，要求：
+
+1. **保持原意**：确保改写后的文本与原意完全一致，不增删核心信息
+2. **优化表达**：
+   - 提升语言流畅度，消除生硬表达
+   - 优化句式结构，使阅读更顺畅
+   - 替换平淡词汇，使用更准确、生动的表达
+   - 统一语气和风格，保持专业性
+3. **修正错误**：
+   - 修正语法错误
+   - 修正标点符号使用
+   - 修正错别字
+   - 优化语序和逻辑
+4. **格式优化**：
+   - 合理分段
+   - 优化标点使用
+   - 保持适当的段落长度
+
+请输出改写后的完整文本，并在最后简要说明主要改进点（用列表形式）。
+
+原始文本如下：`,
+    userDisplay: (text) => `「${text.substring(0, 30)}${text.length > 30 ? '...' : ''}」`
+  },
+  
+  proofread: {
+    label: '稽核检查',
+    icon: '🔍',
+    systemPrompt: `你是一位严谨的文字校对专家。请对用户提供的文本进行全面稽核检查，要求：
+
+1. **错别字检查**：找出并标出所有错别字、错用字、形近字错误
+2. **语句通顺性**：
+   - 检查语法错误
+   - 检查语序不当
+   - 检查成分残缺或赘余
+   - 检查搭配不当
+   - 检查逻辑不通之处
+3. **标点符号**：
+   - 检查标点使用是否正确
+   - 检查是否有遗漏或多余标点
+4. **专业术语**：检查专业词汇使用是否准确
+5. **格式规范**：检查格式是否统一、规范
+
+请按以下格式输出检查结果：
+
+**检查结果概览**：总体评价（如"存在 X 处问题，整体质量良好/一般/较差"）
+
+**问题详情**：
+1. 【类型】原文："XXX" → 建议："XXX"（说明：...）
+2. ...
+
+**修改建议版本**：给出修改后的完整文本
+
+原始文本如下：`,
+    userDisplay: (text) => `「${text.substring(0, 30)}${text.length > 30 ? '...' : ''}」`
+  }
 };
 
 let config = { ...DEFAULT_CONFIG };
@@ -20,6 +104,95 @@ let isProcessingPending = false;
 let pageContextCache = null;
 let isInThinkBlock = false;
 let conversationHistory = []; // 存储对话历史
+
+// 估算字符数对应的token数（粗略估算：1个中文字符≈0.6 token，1个英文字符≈0.25 token）
+function estimateTokens(text) {
+  if (!text) return 0;
+  let tokens = 0;
+  for (let char of String(text)) {
+    // 中文字符范围
+    if (/[\u4e00-\u9fa5]/.test(char)) {
+      tokens += 0.6;
+    } else if (/[a-zA-Z0-9]/.test(char)) {
+      tokens += 0.25;
+    } else {
+      tokens += 0.3; // 标点符号等
+    }
+  }
+  return Math.ceil(tokens);
+}
+
+// 计算消息列表的总字符数
+function calculateTotalChars(messages) {
+  return messages.reduce((total, msg) => {
+    return total + (msg.content ? String(msg.content).length : 0);
+  }, 0);
+}
+
+// 截断消息内容到指定长度
+function truncateMessageContent(content, maxLength) {
+  if (!content || content.length <= maxLength) {
+    return content;
+  }
+  return content.substring(0, maxLength) + '\n...(内容已截断)';
+}
+
+// 智能截断消息列表，确保总长度不超过限制
+function truncateMessages(messages, maxTotalChars) {
+  const totalChars = calculateTotalChars(messages);
+  
+  if (totalChars <= maxTotalChars) {
+    return messages;
+  }
+  
+  console.log("[Sidepanel] 消息总长度超限，需要截断:", totalChars, ">", maxTotalChars);
+  
+  // 保留系统消息（通常是第一条）
+  const systemMessages = messages.filter(m => m.role === 'system');
+  const otherMessages = messages.filter(m => m.role !== 'system');
+  
+  // 计算系统消息占用的长度
+  const systemChars = calculateTotalChars(systemMessages);
+  const remainingChars = maxTotalChars - systemChars;
+  
+  if (remainingChars < 1000) {
+    // 系统消息就占用了太多空间，需要截断系统消息
+    console.log("[Sidepanel] 系统消息过长，进行截断");
+    const truncatedSystem = systemMessages.map(msg => ({
+      ...msg,
+      content: truncateMessageContent(msg.content, Math.floor(maxTotalChars * 0.6))
+    }));
+    return [...truncatedSystem, ...otherMessages.slice(-2)]; // 只保留最近2条
+  }
+  
+  // 保留最近的消息，删除旧的
+  let result = [...systemMessages];
+  let currentChars = systemChars;
+  
+  // 从后往前添加消息
+  for (let i = otherMessages.length - 1; i >= 0; i--) {
+    const msg = otherMessages[i];
+    const msgChars = String(msg.content).length;
+    
+    if (currentChars + msgChars <= maxTotalChars) {
+      result.unshift(msg);
+      currentChars += msgChars;
+    } else {
+      // 空间不足，截断这条消息
+      const availableChars = maxTotalChars - currentChars - 100; // 留100字符缓冲
+      if (availableChars > 200) {
+        result.unshift({
+          ...msg,
+          content: truncateMessageContent(msg.content, availableChars)
+        });
+      }
+      break;
+    }
+  }
+  
+  console.log("[Sidepanel] 截断后消息数:", result.length, "总字符:", calculateTotalChars(result));
+  return result;
+}
 
 // DOM 元素
 const messagesContainer = document.getElementById('ai-messages');
@@ -99,19 +272,22 @@ async function checkPendingQuestion() {
           inputTextarea.setSelectionRange(inputTextarea.value.length, inputTextarea.value.length);
         }
       } else {
-        // 总结、改写、稽核：直接发送请求
-        const userPrompt = action === 'summarize' ? '请总结以下内容' : 
-                          action === 'rewrite' ? '请润色改写以下内容' : '请稽核检查以下内容';
-        addMessage('user', userPrompt);
-        addMessage('user', `「${selectedText}」`);
-        
-        // 保存到历史
-        conversationHistory.push({ 
-          role: 'user', 
-          content: `${userPrompt}:\n\n${selectedText}` 
-        });
-        
-        await askAI(question);
+        // 功能处理：总结、改写、稽核
+        const feature = FEATURE_PROMPTS[action];
+        if (feature) {
+          // 对话框中只显示简洁的图标和简短文本
+          const shortText = selectedText.substring(0, 20) + (selectedText.length > 20 ? '...' : '');
+          addMessage('user', `${feature.icon} ${feature.label}：「${shortText}」`);
+          
+          // 保存到历史（使用完整的系统提示词+原文）
+          conversationHistory.push({ 
+            role: 'user', 
+            content: `${feature.systemPrompt}\n\n${selectedText}` 
+          });
+          
+          // 发送请求（此时 askAI 会使用 conversationHistory 中的完整提示）
+          await askAI('', null, true); // 第三个参数表示这是功能调用，不需要额外构建提示
+        }
       }
     }
   } catch (e) {
@@ -210,6 +386,9 @@ function setupEventListeners() {
   // 保存设置
   document.querySelector('.ai-config-save').addEventListener('click', async () => {
     const contextLengthInput = parseInt(document.getElementById('ai-context-length').value);
+    const maxTotalCharsInput = parseInt(document.getElementById('ai-max-total-chars').value);
+    const maxHistoryRoundsInput = parseInt(document.getElementById('ai-max-history-rounds').value);
+    
     const newConfig = {
       apiKey: document.getElementById('ai-api-key').value.trim(),
       apiUrl: document.getElementById('ai-api-url').value.trim() || DEFAULT_CONFIG.apiUrl,
@@ -217,7 +396,9 @@ function setupEventListeners() {
       temperature: parseFloat(document.getElementById('ai-temperature').value) || DEFAULT_CONFIG.temperature,
       maxTokens: parseInt(document.getElementById('ai-max-tokens').value) || DEFAULT_CONFIG.maxTokens,
       useContext: document.getElementById('ai-use-context').checked,
-      contextLength: contextLengthInput >= 1000 ? contextLengthInput : DEFAULT_CONFIG.contextLength,
+      contextLength: contextLengthInput >= 1000 && contextLengthInput <= 15000 ? contextLengthInput : DEFAULT_CONFIG.contextLength,
+      maxTotalChars: maxTotalCharsInput >= 5000 ? maxTotalCharsInput : DEFAULT_CONFIG.maxTotalChars,
+      maxHistoryRounds: maxHistoryRoundsInput >= 1 && maxHistoryRoundsInput <= 20 ? maxHistoryRoundsInput : DEFAULT_CONFIG.maxHistoryRounds,
       enableDoubleClick: document.getElementById('ai-enable-double-click').checked
     };
 
@@ -616,7 +797,7 @@ ${promptInstructions}`;
 }
 
 // 询问 AI
-async function askAI(text, context = null) {
+async function askAI(text, context = null, isFeatureCall = false) {
   // 重新加载配置，确保使用最新的配置
   await loadConfig();
   
@@ -626,7 +807,8 @@ async function askAI(text, context = null) {
     apiKey: config.apiKey ? '已设置(' + config.apiKey.substring(0, 10) + '...)' : '未设置',
     temperature: config.temperature,
     maxTokens: config.maxTokens,
-    historyLength: conversationHistory.length
+    historyLength: conversationHistory.length,
+    isFeatureCall: isFeatureCall
   });
   
   if (!config.apiKey) {
@@ -642,30 +824,32 @@ async function askAI(text, context = null) {
   accumulatedThinkText = '';
   isInThinkBlock = false;
   
-  // 如果没有传入上下文，尝试获取
-  let pageContext = context;
-  if (config.useContext && !pageContext) {
-    pageContext = await getCurrentPageContext();
-  }
-  
-  // 构建消息列表（包含历史对话）
+  // 构建消息列表
   const messages = [];
   
-  // 添加系统提示（如果有网页上下文）
-  if (pageContext) {
-    const { content, metadata } = pageContext;
-    let contextHeader = "";
-    if (metadata.title) contextHeader += `页面标题: ${metadata.title}\n`;
-    if (metadata.url) contextHeader += `页面地址: ${metadata.url}\n`;
+  // 如果不是功能调用，需要构建新的用户提示（包含网页上下文）
+  if (!isFeatureCall && text) {
+    // 获取网页上下文
+    let pageContext = context;
+    if (config.useContext && !pageContext) {
+      pageContext = await getCurrentPageContext();
+    }
     
-    const hasModalContent = content.includes('=== 当前弹窗/模态框内容 ===');
-    const promptInstructions = hasModalContent 
-      ? "请优先基于弹窗/模态框内容回答，如果弹窗内容不足以回答，再参考页面主体内容。如果内容完全无关，请告知用户。"
-      : "请基于上述网页内容回答，如果内容与问题无关，请告知用户。";
-    
-    messages.push({
-      role: 'system',
-      content: `以下是一篇网页的内容，用户的提问可能基于这些内容：
+    // 构建系统提示（如果有网页上下文）
+    if (pageContext) {
+      const { content, metadata } = pageContext;
+      let contextHeader = "";
+      if (metadata.title) contextHeader += `页面标题: ${metadata.title}\n`;
+      if (metadata.url) contextHeader += `页面地址: ${metadata.url}\n`;
+      
+      const hasModalContent = content.includes('=== 当前弹窗/模态框内容 ===');
+      const promptInstructions = hasModalContent 
+        ? "请优先基于弹窗/模态框内容回答，如果弹窗内容不足以回答，再参考页面主体内容。如果内容完全无关，请告知用户。"
+        : "请基于上述网页内容回答，如果内容与问题无关，请告知用户。";
+      
+      messages.push({
+        role: 'system',
+        content: `以下是一篇网页的内容，用户的提问可能基于这些内容：
 
 --- 网页内容 ---
 ${contextHeader}
@@ -673,22 +857,37 @@ ${content}
 --- 内容结束 ---
 
 ${promptInstructions}`
-    });
+      });
+    }
+    
+    // 添加历史对话（限制轮数，防止累积过长）
+    const maxHistoryRounds = config.maxHistoryRounds || 5;
+    const recentHistory = conversationHistory.slice(-maxHistoryRounds * 2);
+    messages.push(...recentHistory);
+    
+    // 添加当前问题
+    messages.push({ role: 'user', content: text });
+    
+  } else if (isFeatureCall) {
+    // 功能调用：消息已经在 conversationHistory 中构建好了
+    // 只需要添加历史对话（不包含系统上下文，因为功能调用不需要网页上下文）
+    const maxHistoryRounds = Math.min(3, config.maxHistoryRounds || 5); // 功能调用使用更少的历史
+    const recentHistory = conversationHistory.slice(-maxHistoryRounds * 2);
+    messages.push(...recentHistory);
   }
   
-  // 添加历史对话（限制最近 10 轮）
-  const maxHistory = 10;
-  const recentHistory = conversationHistory.slice(-maxHistory * 2); // 每轮包含 user 和 assistant
-  messages.push(...recentHistory);
+  // 智能截断，确保总长度不超过限制
+  const maxTotalChars = config.maxTotalChars || 25000;
+  const truncatedMessages = truncateMessages(messages, maxTotalChars);
   
-  // 添加当前问题
-  messages.push({ role: 'user', content: text });
-  
-  console.log("[Sidepanel] 发送请求，消息数量:", messages.length, "历史轮数:", conversationHistory.length / 2);
+  console.log("[Sidepanel] 发送请求，原始消息数:", messages.length, 
+              "截断后消息数:", truncatedMessages.length,
+              "总字符:", calculateTotalChars(truncatedMessages),
+              "预估tokens:", estimateTokens(truncatedMessages.map(m => m.content).join('')));
   
   const requestBody = {
     model: config.model,
-    messages: messages,
+    messages: truncatedMessages,
     temperature: config.temperature,
     max_tokens: config.maxTokens,
     stream: true
@@ -707,7 +906,7 @@ ${promptInstructions}`
   const fullUrl = apiUrl + '/chat/completions';
   
   console.log("[Sidepanel] 请求 URL:", fullUrl);
-  console.log("[Sidepanel] 请求体:", JSON.stringify(requestBody, null, 2));
+  console.log("[Sidepanel] 请求体消息数:", requestBody.messages.length);
   
   // One API 支持两种认证方式: Bearer Token 或直接使用 API Key
   // 尝试不使用 Bearer 前缀
@@ -802,13 +1001,29 @@ chrome.runtime.onMessage.addListener((msg) => {
     }
     
   } else if (msg.type === 'STREAM_DONE') {
-    // 保存 AI 回复到历史（包含思考过程和普通内容）
+  // 保存 AI 回复到历史（包含思考过程和普通内容）
     const fullResponse = accumulatedThinkText 
-      ? `<think>\n${accumulatedThinkText}\n</think>\n\n${accumulatedText}`
+      ? ` <think> \n${accumulatedThinkText}\n\n${accumulatedText}`
       : accumulatedText;
     if (fullResponse.trim()) {
-      conversationHistory.push({ role: 'assistant', content: fullResponse });
+      // 截断过长的回复，防止历史累积过大
+      const maxResponseLength = 8000;
+      const savedResponse = fullResponse.length > maxResponseLength 
+        ? fullResponse.substring(0, maxResponseLength) + '\n...(回复已截断保存)'
+        : fullResponse;
+      conversationHistory.push({ role: 'assistant', content: savedResponse });
       console.log("[Sidepanel] 已保存回复到历史，当前历史长度:", conversationHistory.length);
+      
+      // 清理过旧的历史，防止内存占用过大
+      const maxTotalMessages = (config.maxHistoryRounds || 5) * 2 + 2; // 用户+AI 轮数 + 当前请求
+      if (conversationHistory.length > maxTotalMessages * 2) {
+        // 保留系统消息（如果有）和最近的消息
+        const systemMessages = conversationHistory.filter(m => m.role === 'system');
+        const otherMessages = conversationHistory.filter(m => m.role !== 'system');
+        const recentMessages = otherMessages.slice(-maxTotalMessages);
+        conversationHistory = [...systemMessages, ...recentMessages];
+        console.log("[Sidepanel] 已清理旧历史，新历史长度:", conversationHistory.length);
+      }
     }
     
     currentBotBubble = null;
@@ -870,6 +1085,17 @@ function refreshConfigPanel() {
   document.getElementById('ai-use-context').checked = config.useContext !== false;
   document.getElementById('ai-context-length').value = config.contextLength || DEFAULT_CONFIG.contextLength;
   document.getElementById('ai-enable-double-click').checked = config.enableDoubleClick === true;
+  
+  // 新的配置项
+  const maxTotalCharsEl = document.getElementById('ai-max-total-chars');
+  if (maxTotalCharsEl) {
+    maxTotalCharsEl.value = config.maxTotalChars || DEFAULT_CONFIG.maxTotalChars;
+  }
+  const maxHistoryRoundsEl = document.getElementById('ai-max-history-rounds');
+  if (maxHistoryRoundsEl) {
+    maxHistoryRoundsEl.value = config.maxHistoryRounds || DEFAULT_CONFIG.maxHistoryRounds;
+  }
+  
   console.log("[Sidepanel] 设置面板已刷新，apiUrl:", document.getElementById('ai-api-url').value);
 }
 

@@ -98,8 +98,20 @@
       
       <div class="ai-config-item">
         <label>上下文最大长度（字符）</label>
-        <input type="number" class="ai-config-input" id="ai-context-length" min="1000" step="1000" value="5000">
-        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">建议：5000-30000字符</small>
+        <input type="number" class="ai-config-input" id="ai-context-length" min="1000" max="15000" step="1000" value="8000">
+        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">建议：3000-8000字符，过长可能导致请求失败</small>
+      </div>
+      
+      <div class="ai-config-item">
+        <label>单次请求最大字符数</label>
+        <input type="number" class="ai-config-input" id="ai-max-total-chars" min="5000" max="50000" step="5000" value="25000">
+        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">包括上下文+历史对话，建议15000-30000</small>
+      </div>
+      
+      <div class="ai-config-item">
+        <label>保留对话轮数</label>
+        <input type="number" class="ai-config-input" id="ai-max-history-rounds" min="1" max="20" step="1" value="5">
+        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">多轮对话时保留的最近对话轮数</small>
       </div>
       
       <div class="ai-config-item">

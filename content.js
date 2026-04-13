@@ -329,6 +329,29 @@ function getModalContent() {
   return modalContents;
 }
 
+// 内容长度限制（字符数），避免返回过长内容
+const MAX_CONTENT_LENGTH = 15000;
+
+// 智能截断内容，优先保留重要部分
+function truncateContent(content, maxLength) {
+  if (!content || content.length <= maxLength) {
+    return content;
+  }
+  
+  console.log("[Content] 内容需要截断，原始长度:", content.length, "限制:", maxLength);
+  
+  // 优先保留弹窗内容（通常在前面）
+  const modalEndIndex = content.indexOf('=== 弹窗内容结束 ===');
+  if (modalEndIndex > 0 && modalEndIndex < maxLength) {
+    // 有弹窗内容且在限制范围内，保留弹窗+部分主体内容
+    const remainingLength = maxLength - modalEndIndex - 30;
+    return content.substring(0, modalEndIndex + 25) + '\n...(主体内容已截断)';
+  }
+  
+  // 简单截断
+  return content.substring(0, maxLength) + '\n...(内容已截断)';
+}
+
 // 获取网页正文内容
 function getPageContent() {
   console.log("[Content] 开始获取页面内容");
@@ -394,7 +417,10 @@ function getPageContent() {
     contents.push(content);
   }
 
-  return contents.join('\n');
+  const result = contents.join('\n');
+  
+  // 截断过长内容
+  return truncateContent(result, MAX_CONTENT_LENGTH);
 }
 
 // 获取网页元信息
