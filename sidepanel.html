@@ -12,25 +12,36 @@
     <div class="ai-header">
       <span class="ai-title">AI 问答助手</span>
       <div class="ai-header-actions">
-        <span class="ai-new-chat" title="新建对话">➕</span>
-        <span class="ai-config-btn" title="设置">⚙️</span>
+        <span class="ai-header-btn ai-new-chat" title="新建对话">➕</span>
+        <span class="ai-header-btn ai-config-btn" title="设置">⚙️</span>
       </div>
     </div>
     
     <!-- 消息区域 -->
     <div class="ai-messages" id="ai-messages"></div>
     
-    <!-- 输入区域 -->
-    <div class="ai-input-bar">
-      <textarea class="ai-input" id="ai-input" placeholder="输入问题，按回车发送..."></textarea>
-      <button class="ai-send" id="ai-send">发送</button>
-    </div>
-    
-    <!-- 上下文状态栏 -->
-    <div class="ai-context-bar">
-      <div class="ai-context-left">
-        <button class="ai-refresh-context-mini" title="刷新网页上下文">🔄</button>
-        <span id="ai-context-info" class="context-info">点击刷新获取页面内容</span>
+    <!-- 底部操作区 -->
+    <div class="ai-bottom-bar">
+      <!-- 输入区域 -->
+      <div class="ai-input-bar">
+        <div class="ai-input-wrapper">
+          <textarea class="ai-input" id="ai-input" placeholder="输入问题，按回车发送..."></textarea>
+          <div class="ai-input-toolbar">
+            <label class="ai-think-checkbox" title="启用 Think 模式">
+              <input type="checkbox" id="ai-enable-think">
+              <span>Think</span>
+            </label>
+            <button class="ai-send" id="ai-send">发送</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 上下文状态栏 -->
+      <div class="ai-context-bar">
+        <div class="ai-context-left">
+          <button class="ai-refresh-context-mini" title="刷新网页上下文">🔄</button>
+          <span id="ai-context-info" class="context-info">点击刷新获取页面内容</span>
+        </div>
       </div>
     </div>
   </div>
@@ -88,7 +99,7 @@
       <div class="ai-config-item">
         <label>上下文最大长度（字符）</label>
         <input type="number" class="ai-config-input" id="ai-context-length" min="1000" step="1000" value="5000">
-        <small style="color: #666; font-size: 12px;">建议：5000-30000字符</small>
+        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">建议：5000-30000字符</small>
       </div>
       
       <div class="ai-config-item">
