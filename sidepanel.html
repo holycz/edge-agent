@@ -54,9 +54,39 @@
         <label>Max Tokens</label>
         <input type="number" class="ai-config-input" id="ai-max-tokens" min="1" max="8192" value="2048">
       </div>
+
+      <div class="ai-config-section">
+        <h3>功能设置</h3>
+      </div>
+
+      <div class="ai-config-item ai-config-checkbox">
+        <label>
+          <input type="checkbox" id="ai-enable-double-click">
+          双击网页空白处唤醒侧边栏
+        </label>
+      </div>
+
+      <div class="ai-config-section">
+        <h3>网页上下文设置</h3>
+      </div>
+      
+      <div class="ai-config-item ai-config-checkbox">
+        <label>
+          <input type="checkbox" id="ai-use-context" checked>
+          使用当前网页内容作为上下文
+        </label>
+      </div>
+      
+      <div class="ai-config-item">
+        <label>上下文最大长度（字符）</label>
+        <input type="number" class="ai-config-input" id="ai-context-length" min="1000" step="1000" value="5000">
+        <small style="color: #666; font-size: 12px;">建议：5000-30000字符</small>
+      </div>
+      
       <div class="ai-config-actions">
         <button class="ai-config-save">保存</button>
         <button class="ai-config-reset">恢复默认</button>
+        <button class="ai-refresh-context">🔄 刷新上下文</button>
       </div>
     </div>
   </div>

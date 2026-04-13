@@ -463,13 +463,53 @@ html, body {
   background: #1a6fd9;
 }
 
-.ai-config-reset {
-  background: #f0f0f0;
-  color: #666;
-}
-
 .ai-config-reset:hover {
   background: #e0e0e0;
+}
+
+.ai-refresh-context {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+  background: #28a745;
+  color: white;
+}
+
+.ai-refresh-context:hover {
+  background: #218838;
+}
+
+/* 配置区域标题 */
+.ai-config-section {
+  margin-top: 20px;
+  margin-bottom: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #eee;
+}
+
+.ai-config-section h3 {
+  font-size: 14px;
+  color: #666;
+  font-weight: 600;
+}
+
+/* 复选框样式 */
+.ai-config-checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: normal !important;
+}
+
+.ai-config-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
 }
 
 /* 思考中动画 */

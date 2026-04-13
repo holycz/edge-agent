@@ -48,16 +48,20 @@ chrome.action.onClicked.addListener(async (tab) => {
 // 监听来自 content script 的消息
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "OPEN_SIDEPANEL") {
+    // 检查 sender.tab 是否存在
+    if (!sender.tab || !sender.tab.windowId) {
+      sendResponse({ success: false, error: "Invalid sender tab" });
+      return false;
+    }
     // 打开侧边栏
-    chrome.sidePanel.open({ windowId: sender.tab.windowId });
-    sendResponse({ success: true });
+    chrome.sidePanel.open({ windowId: sender.tab.windowId })
+      .then(() => sendResponse({ success: true }))
+      .catch(e => sendResponse({ success: false, error: e.message }));
     return true;
   }
-});
-
-// 流式跨域代理
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type !== "API_STREAM_REQUEST") return;
+  
+  // 流式跨域代理
+  if (msg.type !== "API_STREAM_REQUEST") return false;
 
   (async () => {
     try {
