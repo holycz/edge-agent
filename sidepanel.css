@@ -512,6 +512,22 @@ html, body {
   cursor: pointer;
 }
 
+/* 上下文状态显示 */
+.context-status {
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #666;
+  border: 1px solid #e0e0e0;
+}
+
+.context-status.has-context {
+  background: #e8f5e9;
+  border-color: #a5d6a7;
+  color: #2e7d32;
+}
+
 /* 思考中动画 */
 .ai-typing {
   display: flex;
@@ -588,4 +604,55 @@ html, body {
 .ai-config-content::-webkit-scrollbar-thumb {
   background: #ccc;
   border-radius: 3px;
+}
+
+/* 上下文状态栏 */
+.ai-context-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fff;
+  border-top: 1px solid #e8e8e8;
+  font-size: 13px;
+}
+
+.ai-context-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-refresh-context-mini {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: #f0f0f0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.ai-refresh-context-mini:hover {
+  background: #e0e0e0;
+  transform: rotate(180deg);
+}
+
+.context-info {
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-info.has-context {
+  color: #2e7d32;
 }

@@ -191,16 +191,18 @@ function setupEventListeners() {
     }
   });
   
-  // 刷新上下文按钮
+  // 刷新上下文按钮（设置面板）
   document.querySelector('.ai-refresh-context').addEventListener('click', async () => {
-    clearContextCache();
-    const context = await getCurrentPageContext(true); // 强制刷新
-    if (context) {
-      showToast(`已刷新上下文（${context.content.length}字符）`);
-    } else {
-      showToast('无法获取当前页面上下文');
-    }
+    await handleRefreshContext();
   });
+
+  // 刷新上下文按钮（底部状态栏迷你按钮）
+  const miniRefreshBtn = document.querySelector('.ai-refresh-context-mini');
+  if (miniRefreshBtn) {
+    miniRefreshBtn.addEventListener('click', async () => {
+      await handleRefreshContext();
+    });
+  }
   
 }
 
@@ -379,6 +381,89 @@ function clearContextCache() {
   console.log("[Sidepanel] 上下文缓存已清空");
 }
 
+// 刷新上下文状态（自动获取新内容并更新状态栏）
+async function refreshContextStatus() {
+  updateContextStatus('正在获取上下文...');
+  const context = await getCurrentPageContext(true); // 强制刷新
+  if (context) {
+    const statusText = buildContextStatusText(context);
+    updateContextStatus(statusText);
+    console.log("[Sidepanel] 状态栏已更新:", statusText);
+  } else {
+    updateContextStatus('无法获取当前页面上下文');
+  }
+}
+
+// 构建上下文状态文本
+function buildContextStatusText(context) {
+  if (!context || !context.content) {
+    return '无法获取上下文';
+  }
+  
+  let parts = [];
+  const content = context.content;
+  const metadata = context.metadata || {};
+
+  // 显示内容总长度
+  parts.push(`总长度: ${content.length} 字符`);
+
+  // 检测是否有弹窗
+  if (content.includes('=== 当前弹窗/模态框内容 ===')) {
+    const modalMatch = content.match(/--- 弹窗 \d+ \[(\w+)\] ---/g);
+    if (modalMatch) {
+      parts.push(`发现 ${modalMatch.length} 个弹窗`);
+    }
+
+    // 检测是否有 Tab
+    if (content.includes('[包含')) {
+      const tabMatch = content.match(/\[包含 (\d+) 个 Tab\]/g);
+      if (tabMatch) {
+        const totalTabs = tabMatch.reduce((sum, match) => {
+          const num = parseInt(match.match(/\d+/)[0]);
+          return sum + num;
+        }, 0);
+        parts.push(`共 ${totalTabs} 个 Tab 内容`);
+      }
+    }
+
+    // 检测是否有 Steps
+    if (content.includes('Steps 组件') || content.includes('个步骤/阶段')) {
+      const stepsMatch = content.match(/\[包含 (\d+) 个步骤[/\/]阶段\]|Steps 组件: (\d+) 个步骤/g);
+      if (stepsMatch) {
+        const totalSteps = stepsMatch.reduce((sum, match) => {
+          const num = parseInt(match.match(/\d+/)[0]);
+          return sum + num;
+        }, 0);
+        parts.push(`共 ${totalSteps} 个步骤`);
+      }
+    }
+  }
+
+  // 显示页面标题
+  if (metadata.title) {
+    parts.push(`页面: ${metadata.title.substring(0, 30)}${metadata.title.length > 30 ? '...' : ''}`);
+  }
+
+  return parts.join(' | ');
+}
+
+// 更新上下文状态显示
+function updateContextStatus(status) {
+  // 更新设置面板中的状态
+  const statusEl = document.getElementById('ai-context-status');
+  if (statusEl) {
+    statusEl.textContent = status;
+    statusEl.className = 'context-status ' + (status.includes('总长度') ? 'has-context' : '');
+  }
+  
+  // 更新输入框附近的状态栏
+  const infoEl = document.getElementById('ai-context-info');
+  if (infoEl) {
+    infoEl.textContent = status;
+    infoEl.className = 'context-info ' + (status.includes('总长度') ? 'has-context' : '');
+  }
+}
+
 // 构建带上下文的提示词
 function buildPromptWithContext(userQuestion, context) {
   if (!context || !context.content) {
@@ -395,6 +480,16 @@ function buildPromptWithContext(userQuestion, context) {
     contextHeader += `页面地址: ${metadata.url}\n`;
   }
   
+  // 检测内容中是否包含弹窗信息
+  const hasModalContent = content.includes('=== 当前弹窗/模态框内容 ===');
+  
+  let promptInstructions;
+  if (hasModalContent) {
+    promptInstructions = `请优先基于弹窗/模态框内容回答，如果弹窗内容不足以回答，再参考页面主体内容。如果内容完全无关，请告知用户。`;
+  } else {
+    promptInstructions = `请基于上述网页内容回答，如果内容与问题无关，请告知用户。`;
+  }
+  
   const prompt = `以下是一篇网页的内容，请基于这些内容回答用户的问题：
 
 --- 网页内容 ---
@@ -404,7 +499,7 @@ ${content}
 
 用户问题: ${userQuestion}
 
-请基于上述网页内容回答，如果内容与问题无关，请告知用户。`;
+${promptInstructions}`;
 
   return prompt;
 }
@@ -458,8 +553,17 @@ async function askAI(text, context = null) {
   }
 }
 
-// 监听流式响应
+// 监听流式响应和页面变化
 chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'PAGE_CONTENT_CHANGED') {
+    console.log("[Sidepanel] 收到页面变化通知:", msg.url);
+    // 清空缓存
+    clearContextCache();
+    // 立即获取新内容并更新状态栏
+    refreshContextStatus();
+    return;
+  }
+  
   if (msg.type === 'STREAM_CHUNK') {
     if (currentBotBubble) {
       accumulatedText += msg.content;
@@ -518,6 +622,21 @@ function showToast(message) {
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 2000);
+}
+
+// 处理刷新上下文
+async function handleRefreshContext() {
+  clearContextCache();
+  updateContextStatus('正在获取上下文...');
+  const context = await getCurrentPageContext(true); // 强制刷新
+  if (context) {
+    const statusText = buildContextStatusText(context);
+    updateContextStatus(statusText);
+    showToast(`已刷新上下文（${context.content.length}字符）`);
+  } else {
+    updateContextStatus('无法获取当前页面上下文');
+    showToast('无法获取当前页面上下文');
+  }
 }
 
 // 启动
