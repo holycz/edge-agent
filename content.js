@@ -1089,6 +1089,51 @@ function truncateContent(content, maxLength) {
   return result.trim();
 }
 
+// 知乎特定内容提取选择器
+const ZHIHU_CONTENT_SELECTORS = [
+  // 知乎文章主内容区
+  '.Post-RichTextContainer',
+  '.RichContent-inner',
+  '.RichContent--unescapable',
+  '[class*="RichText"]',
+  // 问题标题和描述
+  '.QuestionHeader-title',
+  '.QuestionRichText',
+  '.QuestionRichText-content',
+  // 回答列表
+  '.List-item',
+  '.AnswerCard-content',
+  '.ContentItem-content',
+  // 评论
+  '.CommentList',
+  // 文章
+  '.Article-content',
+  '[itemprop="articleBody"]',
+  // 通用内容容器
+  '.Card',
+  '.ContentItem'
+];
+
+// 知乎内容过滤 - 移除 CSS 变量等无关内容
+function cleanZhihuContent(content) {
+  if (!content) return '';
+
+  // 过滤掉 CSS 变量定义 (--semi-xxx: xxx)
+  let cleaned = content.replace(/--semi-[a-z0-9-]+:\s*[^;{}]+[;}]?/gi, '');
+  // 过滤掉 CSS 规则中的其他样式定义
+  cleaned = cleaned.replace(/[.#][a-z_-]+\{[^}]*\}/gi, '');
+  // 过滤掉纯数字或非常短的内容行
+  cleaned = cleaned.split('\n').filter(line => {
+    const trimmed = line.trim();
+    if (trimmed.length < 3) return false;
+    if (/^[\d,\s]+$/.test(trimmed)) return false; // 纯数字和逗号
+    if (trimmed.startsWith('--')) return false; // CSS 变量
+    return true;
+  }).join('\n');
+
+  return cleaned.trim();
+}
+
 // 获取网页正文内容
 function getPageContent() {
   console.log("[Content] 开始获取页面内容");
@@ -1106,6 +1151,227 @@ function getPageContent() {
     });
     specialContents.push("\n=== 弹窗内容结束 ===\n");
   }
+
+  // 获取折叠面板内容
+  const collapsibleContents = [];
+  extractCollapsibleContent(collapsibleContents);
+  if (collapsibleContents.length > 0) {
+    specialContents.push("=== 折叠面板内容 ===");
+    collapsibleContents.forEach(item => {
+      specialContents.push(`\n--- ${item.title} ---`);
+      specialContents.push(item.content);
+    });
+    specialContents.push("\n=== 折叠面板内容结束 ===\n");
+  }
+
+  // 获取审批意见
+  const approvalComments = [];
+  extractApprovalComments(approvalComments);
+  if (approvalComments.length > 0) {
+    specialContents.push("=== 审批意见/评论 ===");
+    approvalComments.forEach(comment => {
+      const header = `[${comment.approver}${comment.action ? ' - ' + comment.action : ''}${comment.time ? ' - ' + comment.time : ''}]`;
+      specialContents.push(`\n${header}`);
+      specialContents.push(comment.content);
+    });
+    specialContents.push("\n=== 审批意见结束 ===\n");
+  }
+
+  // 获取工作流信息
+  const workflowInfo = [];
+  extractWorkflowInfo(workflowInfo);
+  if (workflowInfo.length > 0) {
+    const workflowNodes = workflowInfo.find(i => i.type === 'workflow_nodes');
+    const currentStatus = workflowInfo.find(i => i.type === 'current_status');
+
+    if (workflowNodes || currentStatus) {
+      specialContents.push("=== 审批流程信息 ===");
+      if (currentStatus) {
+        specialContents.push(`当前状态: ${currentStatus.status}`);
+      }
+      if (workflowNodes && workflowNodes.nodes.length > 0) {
+        specialContents.push(`\n流程节点: ${workflowNodes.nodes.join(' → ')}`);
+      }
+      specialContents.push("\n=== 审批流程信息结束 ===\n");
+    }
+  }
+
+  // 获取数据表格
+  const dataTables = [];
+  extractDataTables(dataTables);
+  if (dataTables.length > 0) {
+    specialContents.push("=== 数据表格 ===");
+    dataTables.forEach(table => {
+      specialContents.push(`\n--- ${table.title} ---`);
+      if (table.headers.length > 0) {
+        specialContents.push(`表头: ${table.headers.join(' | ')}`);
+      }
+      specialContents.push(`共 ${table.totalRows} 行数据`);
+      table.rows.slice(0, 10).forEach((row, idx) => {
+        specialContents.push(` 行${idx + 1}: ${row.join(' | ')}`);
+      });
+      if (table.totalRows > 10) {
+        specialContents.push(` ...(还有 ${table.totalRows - 10} 行未显示)`);
+      }
+    });
+    specialContents.push("\n=== 数据表格结束 ===\n");
+  }
+
+  // 获取 Shadow DOM 内容
+  const shadowContents = [];
+  extractShadowDOMContent(document.body, shadowContents);
+  if (shadowContents.length > 0) {
+    specialContents.push("=== Shadow DOM 内容 ===");
+    shadowContents.forEach(c => specialContents.push(c));
+    specialContents.push("=== Shadow DOM 内容结束 ===\n");
+  }
+
+  // 获取 iframe 内容
+  const iframeContents = [];
+  extractIframeContent(iframeContents);
+  if (iframeContents.length > 0) {
+    specialContents.push("=== iframe 内容 ===");
+    iframeContents.forEach(c => specialContents.push(c));
+    specialContents.push("=== iframe 内容结束 ===\n");
+  }
+
+  // 检测是否是知乎页面
+  const isZhihu = window.location.hostname.includes('zhihu.com');
+  if (isZhihu) {
+    console.log("[Content] 检测到知乎页面，使用知乎特定提取逻辑");
+    let zhihuContent = '';
+
+    // 尝试从知乎特定的选择器提取内容
+    for (const selector of ZHIHU_CONTENT_SELECTORS) {
+      try {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+          const contents = [];
+          elements.forEach(el => {
+            const text = el.innerText?.trim();
+            if (text && text.length > 20) {
+              contents.push(text);
+            }
+          });
+          if (contents.length > 0) {
+            zhihuContent = contents.join('\n\n');
+            console.log(`[Content] 从知乎选择器 "${selector}" 获取内容，长度:`, zhihuContent.length);
+            break;
+          }
+        }
+      } catch (e) {
+        // 忽略无效选择器
+      }
+    }
+
+    // 清理知乎内容
+    zhihuContent = cleanZhihuContent(zhihuContent);
+
+    if (zhihuContent.length > 0) {
+      contents.push("=== 页面主体内容（知乎） ===");
+      contents.push(zhihuContent);
+      // 合并特殊内容
+      contents.unshift(...specialContents);
+      return truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
+    }
+  }
+
+  // 尝试从 article 获取内容
+  const article = document.querySelector('article');
+  if (article) {
+    const content = getAllContentFromElement(article, false);
+    console.log("[Content] 从 <article> 获取内容，长度:", content.length);
+    if (content.length > 0) {
+      contents.push("=== 页面主体内容（来自 article） ===");
+      contents.push(content);
+    }
+    // 合并特殊内容
+    contents.unshift(...specialContents);
+    return truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
+  }
+
+  // 尝试从 main 获取内容
+  const main = document.querySelector('main');
+  if (main) {
+    const content = getAllContentFromElement(main, false);
+    console.log("[Content] 从 <main> 获取内容，长度:", content.length);
+    if (content.length > 0) {
+      contents.push("=== 页面主体内容（来自 main） ===");
+      contents.push(content);
+    }
+    // 合并特殊内容
+    contents.unshift(...specialContents);
+    return truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
+  }
+
+  // 从 body 获取内容
+  const body = document.body;
+  const excludeTags = ['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript'];
+
+  try {
+    const clone = body.cloneNode(true);
+
+    excludeTags.forEach(tag => {
+      const elements = clone.querySelectorAll(tag);
+      elements.forEach(el => el.remove());
+    });
+
+    const commonSelectors = [
+      '.sidebar', '.nav', '.navigation', '.menu', '.header', '.footer',
+      '.advertisement', '.ads', '.comments', '.social-share',
+      '[role="navigation"]', '[role="banner"]', '[role="complementary"]'
+    ];
+    commonSelectors.forEach(selector => {
+      try {
+        const elements = clone.querySelectorAll(selector);
+        elements.forEach(el => el.remove());
+      } catch (e) {
+        // 忽略无效选择器
+      }
+    });
+
+    // 额外的知乎过滤
+    if (isZhihu) {
+      // 移除知乎特定的非内容元素
+      const zhihuExcludeSelectors = [
+        '.Sticky', // 知乎的粘性导航
+        '.TopstoryTabs',
+        '.GlobalWrite',
+        '.CornerButtons',
+        '.MobileModal'
+      ];
+      zhihuExcludeSelectors.forEach(selector => {
+        try {
+          const elements = clone.querySelectorAll(selector);
+          elements.forEach(el => el.remove());
+        } catch (e) {}
+      });
+    }
+
+    let content = clone.innerText?.trim() || '';
+
+    // 如果是知乎，清理内容
+    if (isZhihu) {
+      content = cleanZhihuContent(content);
+    }
+
+    console.log("[Content] 从 body 获取内容，长度:", content.length);
+    if (content.length > 0) {
+      contents.push("=== 页面主体内容（来自 body） ===");
+      contents.push(content);
+    }
+  } catch (e) {
+    console.error("[Content] 从 body 获取内容失败:", e);
+  }
+
+  // 合并特殊内容
+  contents.unshift(...specialContents);
+
+  const result = contents.join('\n');
+
+  // 截断过长内容
+  return truncateContent(result, MAX_CONTENT_LENGTH);
+}
 
   // 获取折叠面板内容
   const collapsibleContents = [];
