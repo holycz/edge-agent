@@ -1092,46 +1092,60 @@ function truncateContent(content, maxLength) {
 
 // 知乎特定内容提取选择器
 const ZHIHU_CONTENT_SELECTORS = [
-  // 知乎文章主内容区
+  // 知乎文章主内容区 - 文章详情页
   '.Post-RichTextContainer',
+  '.Post-content',
+  '.Post-NormalMain .RichText',
+  '.Post-NormalMain',
+  // 知乎回答内容区
   '.RichContent-inner',
   '.RichContent--unescapable',
+  '.RichContent',
+  '.RichText',
   '[class*="RichText"]',
-  // 问题标题和描述
-  '.QuestionHeader-title',
-  '.QuestionRichText',
+  // 问题页面
   '.QuestionRichText-content',
-  // 回答列表
+  '.QuestionRichText',
+  '.QuestionHeader-detail',
+  // 回答列表项
+  '.List-item .ContentItem-content',
+  '.List-item .RichContent',
   '.List-item',
   '.AnswerCard-content',
   '.ContentItem-content',
-  // 评论
-  '.CommentList',
-  // 文章
+  '.ContentItem-main',
+  '.ContentItem',
+  // 文章内容
   '.Article-content',
+  '.Article-title',
   '[itemprop="articleBody"]',
+  // 热榜/推荐
+  '.TopstoryItem .ContentItem-content',
+  '.TopstoryItem',
   // 通用内容容器
-  '.Card',
-  '.ContentItem'
+  '.Card .ContentItem',
+  '.Card'
 ];
 
 // 知乎内容过滤 - 移除 CSS 变量等无关内容
 function cleanZhihuContent(content) {
   if (!content) return '';
 
-  // 过滤掉 CSS 变量定义 (--semi-xxx: xxx)
-  // 注意：只匹配完整的CSS变量行，避免误伤正文
-  let cleaned = content.replace(/^\s*--[a-z0-9-]+:\s*[\d,\s]+;?\s*$/gim, '');
-
-  // 过滤掉纯数字或非常短的内容行
-  cleaned = cleaned.split('\n').filter(line => {
+  // 只过滤明显的 CSS 变量行（以 -- 开头，包含冒号和数字）
+  // 保留其他所有内容，包括正文中的代码块
+  let cleaned = content.split('\n').filter(line => {
     const trimmed = line.trim();
-    if (trimmed.length === 0) return false; // 空行
-    if (trimmed.length < 3) return false; // 太短的行
-    if (/^[\d,\s;]+$/.test(trimmed)) return false; // 纯数字、逗号和分号
-    if (trimmed.startsWith('--') && trimmed.includes(':')) return false; // CSS 变量
-    // 检查是否是RGB颜色值行 (如: 255, 243, 239)
+
+    // 保留非空行
+    if (trimmed.length === 0) return true; // 保留空行作为段落分隔
+
+    // 只过滤纯 CSS 变量行（如: --semi-grey-9:249,249,249;）
+    if (/^--[a-z0-9-]+:\s*[\d,\s;]+$/.test(trimmed)) return false;
+    if (/^--[a-z0-9-]+:\s*#?[\da-f]+;?$/i.test(trimmed)) return false;
+
+    // 过滤纯 RGB 颜色值行
     if (/^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(trimmed)) return false;
+
     return true;
   }).join('\n');
 
@@ -1243,6 +1257,9 @@ function getPageContent() {
   const isZhihu = window.location.hostname.includes('zhihu.com');
   if (isZhihu) {
     console.log("[Content] 检测到知乎页面，使用知乎特定提取逻辑");
+    console.log("[Content] 当前URL:", window.location.href);
+    console.log("[Content] 页面标题:", document.title);
+
     let zhihuContent = '';
     let bestSelector = '';
     let maxLength = 0;
@@ -1253,14 +1270,16 @@ function getPageContent() {
         const elements = document.querySelectorAll(selector);
         if (elements.length > 0) {
           const selectorContents = [];
-          elements.forEach(el => {
+          elements.forEach((el, idx) => {
             const text = el.innerText?.trim();
-            if (text && text.length > 20) {
+            if (text && text.length > 50) { // 提高阈值，过滤掉短内容
               selectorContents.push(text);
             }
           });
           const totalLength = selectorContents.join('\n\n').length;
-          console.log(`[Content] 知乎选择器 "${selector}" 匹配到 ${elements.length} 个元素，内容长度: ${totalLength}`);
+          if (totalLength > 0) {
+            console.log(`[Content] 知乎选择器 "${selector}" 匹配到 ${elements.length} 个元素，有效内容长度: ${totalLength}`);
+          }
 
           // 选择内容最长的选择器
           if (totalLength > maxLength) {
@@ -1275,6 +1294,22 @@ function getPageContent() {
     }
 
     console.log(`[Content] 最佳知乎选择器: "${bestSelector}"，原始内容长度: ${zhihuContent.length}`);
+
+    // 如果知乎特定选择器没有获取到足够内容，尝试从整个页面提取
+    if (zhihuContent.length < 500) {
+      console.log("[Content] 知乎特定选择器获取内容不足，尝试从 body 提取");
+      const bodyText = document.body.innerText?.trim() || '';
+      // 过滤掉脚本和样式
+      const filteredText = bodyText
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+
+      if (filteredText.length > zhihuContent.length) {
+        zhihuContent = filteredText;
+        bestSelector = 'body.innerText (fallback)';
+        console.log(`[Content] 从 body 获取内容，长度: ${zhihuContent.length}`);
+      }
+    }
 
     // 清理知乎内容
     const cleanedContent = cleanZhihuContent(zhihuContent);
