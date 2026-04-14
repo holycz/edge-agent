@@ -62,7 +62,8 @@ chrome.runtime.onStartup.addListener(() => {
 createContextMenus();
 
 // 右键点击 → 打开侧边栏并发送问题
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+// 注意：sidePanel.open() 必须在用户手势的同步上下文中调用，不能用 await
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   console.log("[Background] ====== 菜单被点击 ======");
   console.log("[Background] menuItemId:", info.menuItemId);
   console.log("[Background] Tab对象:", tab);
@@ -118,71 +119,51 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  try {
-    // 尝试获取窗口ID
-    let targetWindowId = null;
+    // 准备要存储的数据
+  const storageData = {
+    pendingQuestion: prompt,
+    pendingAction: action,
+    pendingSelectedText: text || ""
+  };
 
-    // 方法1: 从 tab 对象获取（划词菜单时有值，page菜单时可能为undefined）
-    if (tab?.windowId) {
-      targetWindowId = tab.windowId;
-      console.log("[Background] 从tab获取到windowId:", targetWindowId);
-    } else {
-      console.log("[Background] tab或tab.windowId不存在，尝试其他方法");
-    }
+  // 打开侧边栏
+  // 注意：sidePanel.open() 必须在用户手势的同步上下文中调用，不能用 await
+  console.log("[Background] 正在打开侧边栏...");
 
-    // 方法2: 使用 tabs.query 获取当前活动标签页
-    if (!targetWindowId) {
-      console.log("[Background] 尝试查询当前活动窗口...");
-      try {
-        const currentWindow = await chrome.windows.getCurrent();
-        console.log("[Background] 当前窗口:", currentWindow);
-        if (currentWindow?.id) {
-          targetWindowId = currentWindow.id;
-          console.log("[Background] 从getCurrent获取到windowId:", targetWindowId);
-        }
-      } catch (e) {
-        console.log("[Background] getCurrent失败:", e.message);
-      }
-    }
-
-    // 方法3: 备用方案
-    if (!targetWindowId) {
-      console.log("[Background] 尝试查询当前活动标签页...");
-      try {
-        const currentTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        console.log("[Background] 查询到的标签页:", currentTabs);
-        if (currentTabs && currentTabs[0]) {
-          targetWindowId = currentTabs[0].windowId;
-          console.log("[Background] 从tabs.query获取到windowId:", targetWindowId);
-        }
-      } catch (e) {
-        console.log("[Background] tabs.query失败:", e.message);
-      }
-    }
-
-    if (!targetWindowId) {
-      console.error("[Background] 无法获取窗口ID，所有方法都失败");
-      return;
-    }
-
-    console.log("[Background] 最终使用的windowId:", targetWindowId);
-
-    // 存储问题，等侧边栏打开后处理
-    await chrome.storage.session.set({
-      pendingQuestion: prompt,
-      pendingAction: action,
-      pendingSelectedText: text || ""
-    });
-    console.log("[Background] 已存储问题到session storage");
-
-    // 打开侧边栏
-    console.log("[Background] 正在调用 chrome.sidePanel.open...");
-    await chrome.sidePanel.open({ windowId: targetWindowId });
-    console.log("[Background] 侧边栏已成功打开");
-  } catch (e) {
-    console.error("[Background] 处理菜单点击失败:", e);
-    console.error("[Background] 错误详情:", e.message, e.stack);
+  // 方法1: 如果有 tab.windowId，直接使用（划词菜单时有效）
+  if (tab?.windowId) {
+    console.log("[Background] 使用 tab.windowId:", tab.windowId);
+    chrome.sidePanel.open({ windowId: tab.windowId })
+      .then(() => {
+        console.log("[Background] 侧边栏打开成功");
+        return chrome.storage.session.set(storageData);
+      })
+      .then(() => console.log("[Background] 数据已存储"))
+      .catch(e => console.error("[Background] 操作失败:", e));
+    return;
   }
+
+  // 方法2: 对于page菜单，tab.windowId不存在，使用空对象打开当前窗口
+  console.log("[Background] 使用当前活动窗口打开侧边栏");
+  chrome.sidePanel.open({})
+    .then(() => {
+      console.log("[Background] 侧边栏打开成功");
+      return chrome.storage.session.set(storageData);
+    })
+    .then(() => console.log("[Background] 数据已存储"))
+    .catch(e => {
+      console.error("[Background] 操作失败:", e);
+      // 备用方案：获取最后聚焦窗口
+      console.log("[Background] 尝试备用方案...");
+      return chrome.windows.getLastFocused()
+        .then(win => {
+          console.log("[Background] 获取到最后聚焦窗口:", win.id);
+          return chrome.sidePanel.open({ windowId: win.id });
+        })
+        .then(() => chrome.storage.session.set(storageData))
+        .then(() => console.log("[Background] 数据已存储"));
+    })
+    .catch(e => console.error("[Background] 所有方法都失败:", e));
 });
 
 // 扩展图标点击打开侧边栏
