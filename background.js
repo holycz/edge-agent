@@ -63,8 +63,10 @@ createContextMenus();
 
 // 右键点击 → 打开侧边栏并发送问题
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  console.log("[Background] 菜单被点击:", info.menuItemId);
-  console.log("[Background] Tab信息:", tab);
+  console.log("[Background] ====== 菜单被点击 ======");
+  console.log("[Background] menuItemId:", info.menuItemId);
+  console.log("[Background] Tab对象:", tab);
+  console.log("[Background] Tab.windowId:", tab?.windowId);
   console.log("[Background] 选中文本:", info.selectionText);
 
   const text = info.selectionText?.trim();
@@ -91,7 +93,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
 
-  // 处理无划词时的页面菜单项
+  // 处理无划词时的页面菜单项（这些不需要选中文字）
   if (info.menuItemId === "ai-open-panel") {
     console.log("[Background] 匹配到打开侧边栏菜单");
     action = "openPanel";
@@ -117,21 +119,49 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   try {
-    // 对于页面菜单项（无划词），tab 可能为空，需要获取当前活动标签页
-    let targetWindowId = tab?.windowId;
-    console.log("[Background] 从tab获取的windowId:", targetWindowId);
+    // 尝试获取窗口ID
+    let targetWindowId = null;
 
+    // 方法1: 从 tab 对象获取（划词菜单时有值，page菜单时可能为undefined）
+    if (tab?.windowId) {
+      targetWindowId = tab.windowId;
+      console.log("[Background] 从tab获取到windowId:", targetWindowId);
+    } else {
+      console.log("[Background] tab或tab.windowId不存在，尝试其他方法");
+    }
+
+    // 方法2: 使用 tabs.query 获取当前活动标签页
+    if (!targetWindowId) {
+      console.log("[Background] 尝试查询当前活动窗口...");
+      try {
+        const currentWindow = await chrome.windows.getCurrent();
+        console.log("[Background] 当前窗口:", currentWindow);
+        if (currentWindow?.id) {
+          targetWindowId = currentWindow.id;
+          console.log("[Background] 从getCurrent获取到windowId:", targetWindowId);
+        }
+      } catch (e) {
+        console.log("[Background] getCurrent失败:", e.message);
+      }
+    }
+
+    // 方法3: 备用方案
     if (!targetWindowId) {
       console.log("[Background] 尝试查询当前活动标签页...");
-      const currentTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      console.log("[Background] 查询到的活动标签页:", currentTabs);
-      if (currentTabs && currentTabs[0]) {
-        targetWindowId = currentTabs[0].windowId;
+      try {
+        const currentTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        console.log("[Background] 查询到的标签页:", currentTabs);
+        if (currentTabs && currentTabs[0]) {
+          targetWindowId = currentTabs[0].windowId;
+          console.log("[Background] 从tabs.query获取到windowId:", targetWindowId);
+        }
+      } catch (e) {
+        console.log("[Background] tabs.query失败:", e.message);
       }
     }
 
     if (!targetWindowId) {
-      console.error("[Background] 无法获取窗口ID");
+      console.error("[Background] 无法获取窗口ID，所有方法都失败");
       return;
     }
 
@@ -146,10 +176,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     console.log("[Background] 已存储问题到session storage");
 
     // 打开侧边栏
+    console.log("[Background] 正在调用 chrome.sidePanel.open...");
     await chrome.sidePanel.open({ windowId: targetWindowId });
-    console.log("[Background] 侧边栏已打开");
+    console.log("[Background] 侧边栏已成功打开");
   } catch (e) {
     console.error("[Background] 处理菜单点击失败:", e);
+    console.error("[Background] 错误详情:", e.message, e.stack);
   }
 });
 
