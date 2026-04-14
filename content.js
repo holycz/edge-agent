@@ -970,7 +970,8 @@ function getModalContent() {
 }
 
 // 内容长度限制（字符数），避免返回过长内容
-const MAX_CONTENT_LENGTH = 15000;
+// 注意：这个限制应该大于 sidepanel.js 中的 contextLength，以允许 sidepanel 有足够的空间进行后续截断
+const MAX_CONTENT_LENGTH = 25000;
 
 // 智能截断内容，优先保留重要部分
 function truncateContent(content, maxLength) {
@@ -1119,15 +1120,18 @@ function cleanZhihuContent(content) {
   if (!content) return '';
 
   // 过滤掉 CSS 变量定义 (--semi-xxx: xxx)
-  let cleaned = content.replace(/--semi-[a-z0-9-]+:\s*[^;{}]+[;}]?/gi, '');
-  // 过滤掉 CSS 规则中的其他样式定义
-  cleaned = cleaned.replace(/[.#][a-z_-]+\{[^}]*\}/gi, '');
+  // 注意：只匹配完整的CSS变量行，避免误伤正文
+  let cleaned = content.replace(/^\s*--[a-z0-9-]+:\s*[\d,\s]+;?\s*$/gim, '');
+
   // 过滤掉纯数字或非常短的内容行
   cleaned = cleaned.split('\n').filter(line => {
     const trimmed = line.trim();
-    if (trimmed.length < 3) return false;
-    if (/^[\d,\s]+$/.test(trimmed)) return false; // 纯数字和逗号
-    if (trimmed.startsWith('--')) return false; // CSS 变量
+    if (trimmed.length === 0) return false; // 空行
+    if (trimmed.length < 3) return false; // 太短的行
+    if (/^[\d,\s;]+$/.test(trimmed)) return false; // 纯数字、逗号和分号
+    if (trimmed.startsWith('--') && trimmed.includes(':')) return false; // CSS 变量
+    // 检查是否是RGB颜色值行 (如: 255, 243, 239)
+    if (/^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(trimmed)) return false;
     return true;
   }).join('\n');
 
@@ -1240,23 +1244,29 @@ function getPageContent() {
   if (isZhihu) {
     console.log("[Content] 检测到知乎页面，使用知乎特定提取逻辑");
     let zhihuContent = '';
+    let bestSelector = '';
+    let maxLength = 0;
 
     // 尝试从知乎特定的选择器提取内容
     for (const selector of ZHIHU_CONTENT_SELECTORS) {
       try {
         const elements = document.querySelectorAll(selector);
         if (elements.length > 0) {
-          const contents = [];
+          const selectorContents = [];
           elements.forEach(el => {
             const text = el.innerText?.trim();
             if (text && text.length > 20) {
-              contents.push(text);
+              selectorContents.push(text);
             }
           });
-          if (contents.length > 0) {
-            zhihuContent = contents.join('\n\n');
-            console.log(`[Content] 从知乎选择器 "${selector}" 获取内容，长度:`, zhihuContent.length);
-            break;
+          const totalLength = selectorContents.join('\n\n').length;
+          console.log(`[Content] 知乎选择器 "${selector}" 匹配到 ${elements.length} 个元素，内容长度: ${totalLength}`);
+
+          // 选择内容最长的选择器
+          if (totalLength > maxLength) {
+            maxLength = totalLength;
+            zhihuContent = selectorContents.join('\n\n');
+            bestSelector = selector;
           }
         }
       } catch (e) {
@@ -1264,15 +1274,20 @@ function getPageContent() {
       }
     }
 
-    // 清理知乎内容
-    zhihuContent = cleanZhihuContent(zhihuContent);
+    console.log(`[Content] 最佳知乎选择器: "${bestSelector}"，原始内容长度: ${zhihuContent.length}`);
 
-    if (zhihuContent.length > 0) {
+    // 清理知乎内容
+    const cleanedContent = cleanZhihuContent(zhihuContent);
+    console.log(`[Content] 清理后内容长度: ${cleanedContent.length} (过滤掉 ${zhihuContent.length - cleanedContent.length} 字符)`);
+
+    if (cleanedContent.length > 0) {
       contents.push("=== 页面主体内容（知乎） ===");
-      contents.push(zhihuContent);
+      contents.push(cleanedContent);
       // 合并特殊内容
       contents.unshift(...specialContents);
-      return truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
+      const result = truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
+      console.log("[Content] 最终返回内容长度:", result.length);
+      return result;
     }
   }
 
