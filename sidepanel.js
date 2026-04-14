@@ -330,6 +330,10 @@ async function checkPendingQuestion() {
           // 将光标移到末尾
           inputTextarea.setSelectionRange(inputTextarea.value.length, inputTextarea.value.length);
         }
+      } else if (action === 'openPanel') {
+        // 仅打开侧边栏，不执行任何操作
+        console.log("[Sidepanel] 仅打开侧边栏");
+        // 不执行任何操作，侧边栏已打开
       } else if (action === 'summarizePage' || action === 'summarizeLeaderComments') {
         // 网页总结或领导批示总结（无划词时触发）
         await handlePageSummary(action);

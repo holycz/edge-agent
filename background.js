@@ -28,6 +28,11 @@ async function createContextMenus() {
 
   // 无划词时的菜单项（在页面任意位置右键）
   chrome.contextMenus.create({
+    id: "ai-open-panel",
+    title: "💬 打开 AI 侧边栏",
+    contexts: ["page"]
+  });
+  chrome.contextMenus.create({
     id: "ai-summarize-page",
     title: "📄 总结该网页",
     contexts: ["page"]
@@ -87,6 +92,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   // 处理无划词时的页面菜单项
+  if (info.menuItemId === "ai-open-panel") {
+    console.log("[Background] 匹配到打开侧边栏菜单");
+    action = "openPanel";
+    prompt = "";
+  }
   if (info.menuItemId === "ai-summarize-page") {
     console.log("[Background] 匹配到总结该网页菜单");
     action = "summarizePage";
