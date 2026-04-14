@@ -3,7 +3,7 @@
   "name": "AI划词问答助手",
   "version": "1.0",
   "description": "划词问答、改写、总结、页面对话，带流式输出",
-  "permissions": ["contextMenus", "activeTab", "scripting", "storage", "sidePanel"],
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage", "sidePanel", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"

@@ -1,5 +1,10 @@
 // 创建右键菜单
-chrome.runtime.onInstalled.addListener(() => {
+async function createContextMenus() {
+  // 先移除所有现有菜单
+  await chrome.contextMenus.removeAll();
+  console.log("[Background] 已清除旧菜单");
+
+  // 划词时的菜单项
   chrome.contextMenus.create({
     id: "ai-ask",
     title: "AI 问答",
@@ -20,48 +25,121 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "稽核（检查语句通顺、错别字）",
     contexts: ["selection"]
   });
+
+  // 无划词时的菜单项（在页面任意位置右键）
+  chrome.contextMenus.create({
+    id: "ai-summarize-page",
+    title: "📄 总结该网页",
+    contexts: ["page"]
+  });
+  chrome.contextMenus.create({
+    id: "ai-summarize-leader",
+    title: "👔 总结领导批示",
+    contexts: ["page"]
+  });
+
+  console.log("[Background] 右键菜单创建完成");
+}
+
+// 在扩展安装/更新时创建菜单
+chrome.runtime.onInstalled.addListener(() => {
+  console.log("[Background] 扩展已安装/更新，创建菜单...");
+  createContextMenus();
 });
+
+// 在扩展启动时也创建菜单（防止开发时刷新后菜单丢失）
+chrome.runtime.onStartup.addListener(() => {
+  console.log("[Background] 扩展已启动，创建菜单...");
+  createContextMenus();
+});
+
+// 立即执行一次（开发调试时）
+createContextMenus();
 
 // 右键点击 → 打开侧边栏并发送问题
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  const text = info.selectionText?.trim();
-  if (!text || !tab.id) return;
+  console.log("[Background] 菜单被点击:", info.menuItemId);
+  console.log("[Background] Tab信息:", tab);
+  console.log("[Background] 选中文本:", info.selectionText);
 
+  const text = info.selectionText?.trim();
   let prompt = "";
   let action = "";
-  
-  if (info.menuItemId === "ai-ask") {
-    action = "ask";
-    prompt = text;
+
+  // 处理划词菜单项
+  if (text && tab?.id) {
+    if (info.menuItemId === "ai-ask") {
+      action = "ask";
+      prompt = text;
+    }
+    if (info.menuItemId === "ai-summarize") {
+      action = "summarize";
+      prompt = `请对以下内容进行总结，提炼核心要点：\n\n${text}`;
+    }
+    if (info.menuItemId === "ai-rewrite") {
+      action = "rewrite";
+      prompt = `请对以下内容进行润色改写，保持原意但让表达更流畅、专业：\n\n${text}`;
+    }
+    if (info.menuItemId === "ai-proofread") {
+      action = "proofread";
+      prompt = `请对以下内容进行稽核检查，找出语句不通顺的地方和错别字，并给出修改建议：\n\n${text}`;
+    }
   }
-  if (info.menuItemId === "ai-summarize") {
-    action = "summarize";
-    prompt = `请对以下内容进行总结，提炼核心要点：\n\n${text}`;
+
+  // 处理无划词时的页面菜单项
+  if (info.menuItemId === "ai-summarize-page") {
+    console.log("[Background] 匹配到总结该网页菜单");
+    action = "summarizePage";
+    prompt = "请总结当前网页的主要内容";
   }
-  if (info.menuItemId === "ai-rewrite") {
-    action = "rewrite";
-    prompt = `请对以下内容进行润色改写，保持原意但让表达更流畅、专业：\n\n${text}`;
+  if (info.menuItemId === "ai-summarize-leader") {
+    console.log("[Background] 匹配到总结领导批示菜单");
+    action = "summarizeLeaderComments";
+    prompt = "请分析并总结当前网页中的领导批示内容";
   }
-  if (info.menuItemId === "ai-proofread") {
-    action = "proofread";
-    prompt = `请对以下内容进行稽核检查，找出语句不通顺的地方和错别字，并给出修改建议：\n\n${text}`;
+
+  console.log("[Background] 处理后的action:", action, "prompt:", prompt);
+
+  // 如果没有匹配的动作，直接返回
+  if (!action) {
+    console.log("[Background] 没有匹配到任何动作，退出");
+    return;
   }
 
   try {
+    // 对于页面菜单项（无划词），tab 可能为空，需要获取当前活动标签页
+    let targetWindowId = tab?.windowId;
+    console.log("[Background] 从tab获取的windowId:", targetWindowId);
+
+    if (!targetWindowId) {
+      console.log("[Background] 尝试查询当前活动标签页...");
+      const currentTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      console.log("[Background] 查询到的活动标签页:", currentTabs);
+      if (currentTabs && currentTabs[0]) {
+        targetWindowId = currentTabs[0].windowId;
+      }
+    }
+
+    if (!targetWindowId) {
+      console.error("[Background] 无法获取窗口ID");
+      return;
+    }
+
+    console.log("[Background] 最终使用的windowId:", targetWindowId);
+
     // 存储问题，等侧边栏打开后处理
-    // 存储action类型，用于区分是划词引用还是直接提问
-    await chrome.storage.session.set({ 
+    await chrome.storage.session.set({
       pendingQuestion: prompt,
       pendingAction: action,
-      pendingSelectedText: text
+      pendingSelectedText: text || ""
     });
-    console.log("[Background] 已存储问题:", prompt, "动作:", action);
-    
+    console.log("[Background] 已存储问题到session storage");
+
     // 打开侧边栏
-    await chrome.sidePanel.open({ windowId: tab.windowId });
+    await chrome.sidePanel.open({ windowId: targetWindowId });
     console.log("[Background] 侧边栏已打开");
   } catch (e) {
-    console.error("[Background] 打开侧边栏失败:", e);
+    console.error("[Background] 处理菜单点击失败:", e);
   }
 });
 

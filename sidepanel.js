@@ -9,7 +9,10 @@ const DEFAULT_CONFIG = {
   contextLength: 8000, // 上下文最大字符数（增加到8000，但会受maxTotalChars限制）
   enableDoubleClick: false, // 默认关闭双击唤醒
   maxTotalChars: 25000, // 单次请求总字符数上限
-  maxHistoryRounds: 5 // 最大保留的对话轮数
+  maxHistoryRounds: 5, // 最大保留的对话轮数
+  // 个人身份配置
+  myName: "", // 用户自己的姓名
+  otherInfo: "" // 其他信息（可包含领导、部门等信息）
 };
 
 // 功能提示词模板
@@ -33,7 +36,7 @@ const FEATURE_PROMPTS = {
 原始文本如下：`,
     userDisplay: (text) => `「${text.substring(0, 30)}${text.length > 30 ? '...' : ''}」`
   },
-  
+
   rewrite: {
     label: '润色改写',
     icon: '✨',
@@ -60,7 +63,7 @@ const FEATURE_PROMPTS = {
 原始文本如下：`,
     userDisplay: (text) => `「${text.substring(0, 30)}${text.length > 30 ? '...' : ''}」`
   },
-  
+
   proofread: {
     label: '稽核检查',
     icon: '🔍',
@@ -91,6 +94,62 @@ const FEATURE_PROMPTS = {
 
 原始文本如下：`,
     userDisplay: (text) => `「${text.substring(0, 30)}${text.length > 30 ? '...' : ''}」`
+  },
+
+  summarizePage: {
+    label: '总结该网页',
+    icon: '📄',
+    systemPrompt: `你是一位专业的网页内容总结专家。请基于当前网页的全部内容进行深度总结，要求：
+
+1. **页面主旨提炼**：用一句话概括页面核心内容
+2. **关键信息提取**：提取页面中的重要信息，包括但不限于：
+   - 表单/申请的核心内容
+   - 审批流程和状态
+   - 关键数据和时间节点
+   - 重要审批意见
+3. **结构化呈现**：使用清晰的层次结构展示信息
+4. **突出重点**：标记出需要特别关注的内容
+5. **简洁明了**：避免冗余，保留核心信息
+
+请用中文输出，采用 Markdown 格式。
+
+网页内容如下：`,
+    userDisplay: () => `📄 总结当前网页内容`
+  },
+
+  summarizeLeaderComments: {
+    label: '总结领导批示',
+    icon: '👔',
+    systemPrompt: `请从以下OA审批意见中，提取并总结与我相关的领导批示。
+
+【我的身份信息】
+{USER_INFO}
+
+【提取规则】
+1. 只提取与我直接相关的批示意见
+2. 重点关注包含我姓名或与我工作相关的审批意见
+3. 按审批人分组，提取每个人的批示要点
+
+【输出格式】
+1. 总体批示情况（简要说明有几个领导批示、主要态度）
+
+2. 与我相关的批示详情：
+   - 审批人：XXX
+   - 批示时间：XXXX年XX月XX日
+   - 批示意见：（原文摘录关键内容）
+   - 涉及我的事项：（明确列出需要我做什么）
+   - 批示结果：同意/驳回/补充/转办
+
+3. 待办事项清单：
+   - [ ] 事项1（来自XX领导的批示）
+   - [ ] 事项2（来自XX领导的批示）
+
+【重要提示】
+- 只输出与我相关的批示，其他无关人员的意见一律忽略
+- 批示意见要完整准确，不要遗漏关键信息
+- 明确标注每个批示对我的具体要求
+
+【网页内容如下】：`
   }
 };
 
@@ -243,22 +302,22 @@ async function checkPendingQuestion() {
     console.log("[Sidepanel] 已有正在处理的待处理问题，跳过");
     return;
   }
-  
+
   try {
     const result = await chrome.storage.session.get(['pendingQuestion', 'pendingAction', 'pendingSelectedText']);
     console.log("[Sidepanel] 获取到待处理数据:", result);
-    
+
     if (result.pendingQuestion) {
       isProcessingPending = true;
       const question = result.pendingQuestion;
       const action = result.pendingAction;
       const selectedText = result.pendingSelectedText;
-      
+
       // 清除存储的数据
       await chrome.storage.session.remove(['pendingQuestion', 'pendingAction', 'pendingSelectedText']);
-      
+
       console.log("[Sidepanel] 处理待处理问题:", question, "动作:", action);
-      
+
       // 根据动作类型处理
       if (action === 'ask') {
         // AI问答：直接填入输入框并引用划词内容
@@ -271,6 +330,9 @@ async function checkPendingQuestion() {
           // 将光标移到末尾
           inputTextarea.setSelectionRange(inputTextarea.value.length, inputTextarea.value.length);
         }
+      } else if (action === 'summarizePage' || action === 'summarizeLeaderComments') {
+        // 网页总结或领导批示总结（无划词时触发）
+        await handlePageSummary(action);
       } else {
         // 功能处理：总结、改写、稽核
         const feature = FEATURE_PROMPTS[action];
@@ -278,13 +340,13 @@ async function checkPendingQuestion() {
           // 对话框中只显示简洁的图标和简短文本
           const shortText = selectedText.substring(0, 20) + (selectedText.length > 20 ? '...' : '');
           addMessage('user', `${feature.icon} ${feature.label}：「${shortText}」`);
-          
+
           // 保存到历史（使用完整的系统提示词+原文）
-          conversationHistory.push({ 
-            role: 'user', 
-            content: `${feature.systemPrompt}\n\n${selectedText}` 
+          conversationHistory.push({
+            role: 'user',
+            content: `${feature.systemPrompt}\n\n${selectedText}`
           });
-          
+
           // 发送请求（此时 askAI 会使用 conversationHistory 中的完整提示）
           await askAI('', null, true); // 第三个参数表示这是功能调用，不需要额外构建提示
         }
@@ -295,6 +357,68 @@ async function checkPendingQuestion() {
   } finally {
     isProcessingPending = false;
   }
+}
+
+// 处理网页总结（包括总结该网页和总结领导批示）
+async function handlePageSummary(action) {
+  const feature = FEATURE_PROMPTS[action];
+  if (!feature) {
+    console.error("[Sidepanel] 未知的功能类型:", action);
+    return;
+  }
+
+  // 显示用户操作
+  addMessage('user', `${feature.icon} ${feature.label}`);
+
+  // 获取网页上下文
+  updateContextStatus('正在获取网页内容...');
+  const pageContext = await getCurrentPageContext(true);
+
+  if (!pageContext || !pageContext.content) {
+    addMessage('bot', '无法获取当前网页内容，请确保您正在浏览一个可访问的网页。');
+    return;
+  }
+
+  updateContextStatus('正在分析...');
+
+  // 构建系统提示词
+  let systemPrompt = feature.systemPrompt;
+
+  // 如果是总结领导批示，需要替换用户信息占位符
+  if (action === 'summarizeLeaderComments') {
+    await loadConfig(); // 确保配置是最新的
+    let userInfo = '';
+
+    if (config.myName) {
+      userInfo += `我的姓名：${config.myName}`;
+    }
+    if (config.otherInfo) {
+      if (userInfo) userInfo += '；';
+      userInfo += config.otherInfo;
+    }
+
+    if (!userInfo) {
+      // 未配置个人信息，提示用户
+      addMessage('bot', '请先配置个人身份信息（设置 -> 个人身份配置），以便准确识别相关批示。');
+      openConfigPanel();
+      return;
+    }
+
+    systemPrompt = systemPrompt.replace('{USER_INFO}', userInfo);
+  }
+
+  // 保存到历史
+  conversationHistory.push({
+    role: 'user',
+    content: `${systemPrompt}\n\n${pageContext.content}`
+  });
+
+  // 发送请求
+  await askAI('', null, true);
+
+  // 更新状态栏
+  const statusText = buildContextStatusText(pageContext);
+  updateContextStatus(statusText);
 }
 
 // 初始化 Markdown 解析器
@@ -399,7 +523,10 @@ function setupEventListeners() {
       contextLength: contextLengthInput >= 1000 && contextLengthInput <= 15000 ? contextLengthInput : DEFAULT_CONFIG.contextLength,
       maxTotalChars: maxTotalCharsInput >= 5000 ? maxTotalCharsInput : DEFAULT_CONFIG.maxTotalChars,
       maxHistoryRounds: maxHistoryRoundsInput >= 1 && maxHistoryRoundsInput <= 20 ? maxHistoryRoundsInput : DEFAULT_CONFIG.maxHistoryRounds,
-      enableDoubleClick: document.getElementById('ai-enable-double-click').checked
+      enableDoubleClick: document.getElementById('ai-enable-double-click').checked,
+      // 个人身份配置
+      myName: document.getElementById('ai-my-name').value.trim(),
+      otherInfo: document.getElementById('ai-other-info').value.trim()
     };
 
     console.log("[Sidepanel] 准备保存配置，新配置值:", newConfig);
@@ -1085,7 +1212,7 @@ function refreshConfigPanel() {
   document.getElementById('ai-use-context').checked = config.useContext !== false;
   document.getElementById('ai-context-length').value = config.contextLength || DEFAULT_CONFIG.contextLength;
   document.getElementById('ai-enable-double-click').checked = config.enableDoubleClick === true;
-  
+
   // 新的配置项
   const maxTotalCharsEl = document.getElementById('ai-max-total-chars');
   if (maxTotalCharsEl) {
@@ -1095,7 +1222,17 @@ function refreshConfigPanel() {
   if (maxHistoryRoundsEl) {
     maxHistoryRoundsEl.value = config.maxHistoryRounds || DEFAULT_CONFIG.maxHistoryRounds;
   }
-  
+
+  // 个人身份配置
+  const myNameEl = document.getElementById('ai-my-name');
+  if (myNameEl) {
+    myNameEl.value = config.myName || '';
+  }
+  const otherInfoEl = document.getElementById('ai-other-info');
+  if (otherInfoEl) {
+    otherInfoEl.value = config.otherInfo || '';
+  }
+
   console.log("[Sidepanel] 设置面板已刷新，apiUrl:", document.getElementById('ai-api-url').value);
 }
 
