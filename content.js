@@ -1131,25 +1131,141 @@ const ZHIHU_CONTENT_SELECTORS = [
 function cleanZhihuContent(content) {
   if (!content) return '';
 
-  // 只过滤明显的 CSS 变量行（以 -- 开头，包含冒号和数字）
-  // 保留其他所有内容，包括正文中的代码块
+  // 过滤掉纯样式内容
   let cleaned = content.split('\n').filter(line => {
     const trimmed = line.trim();
 
     // 保留非空行
-    if (trimmed.length === 0) return true; // 保留空行作为段落分隔
+    if (trimmed.length === 0) return true;
 
-    // 只过滤纯 CSS 变量行（如: --semi-grey-9:249,249,249;）
+    // 过滤纯 CSS 变量行
     if (/^--[a-z0-9-]+:\s*[\d,\s;]+$/.test(trimmed)) return false;
     if (/^--[a-z0-9-]+:\s*#?[\da-f]+;?$/i.test(trimmed)) return false;
 
     // 过滤纯 RGB 颜色值行
     if (/^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(trimmed)) return false;
 
+    // 过滤 CSS 类名定义行（如: .class-name { ... }）
+    if (/^[.#][a-z0-9_-]+\s*\{/.test(trimmed)) return false;
+
+    // 过滤纯样式属性行（如: color: #333;）
+    if (/^[a-z-]+:\s*[^;]+;?$/i.test(trimmed) && trimmed.length < 100) return false;
+
+    // 过滤连续的数字和逗号（颜色值序列）
+    if (/^[\d,\s;]+$/.test(trimmed) && trimmed.length < 50) return false;
+
     return true;
   }).join('\n');
 
   return cleaned.trim();
+}
+
+// 检查元素是否只包含样式/无意义内容
+function isStyleOnlyElement(element) {
+  const text = element.textContent?.trim() || '';
+  const innerHTML = element.innerHTML || '';
+
+  // 如果内容太少，可能是样式容器
+  if (text.length < 50) return true;
+
+  // 检查是否主要是 CSS 变量
+  const cssVarMatches = text.match(/^\s*--[a-z0-9-]+:/gm);
+  if (cssVarMatches && cssVarMatches.length > 3) return true;
+
+  // 检查文本密度（文本长度 / HTML 长度）
+  const textDensity = text.length / (innerHTML.length || 1);
+  if (textDensity < 0.1 && text.length < 200) return true;
+
+  return false;
+}
+
+// 智能提取知乎内容 - 基于文本密度和内容质量
+function extractZhihuSmartContent() {
+  console.log("[Content] 使用智能提取模式获取知乎内容");
+
+  // 优先选择器 - 按优先级排序
+  const prioritySelectors = [
+    { selector: '.RichContent-inner', weight: 10 },
+    { selector: '.RichContent .RichText', weight: 10 },
+    { selector: '.Post-content .RichText', weight: 10 },
+    { selector: '.Post-NormalMain .RichText', weight: 10 },
+    { selector: '[itemprop="articleBody"]', weight: 9 },
+    { selector: '.QuestionRichText-content', weight: 8 },
+    { selector: '.AnswerCard-content .RichText', weight: 8 },
+    { selector: '.ContentItem-content .RichText', weight: 7 },
+    { selector: '.List-item .RichText', weight: 7 },
+    { selector: '.Card .RichText', weight: 6 },
+  ];
+
+  let bestContent = '';
+  let bestScore = 0;
+
+  for (const { selector, weight } of prioritySelectors) {
+    try {
+      const elements = document.querySelectorAll(selector);
+      for (const el of elements) {
+        // 跳过样式-only 元素
+        if (isStyleOnlyElement(el)) continue;
+
+        const text = el.textContent?.trim() || '';
+        if (text.length > 100) {
+          // 计算分数：文本长度 * 权重
+          const score = text.length * weight;
+          if (score > bestScore) {
+            bestScore = score;
+            bestContent = text;
+            console.log(`[Content] 找到高优先级内容 "${selector}"，长度: ${text.length}，分数: ${score}`);
+          }
+        }
+      }
+    } catch (e) {
+      // 忽略无效选择器
+    }
+  }
+
+  // 如果没找到足够内容，尝试从 body 提取
+  if (bestContent.length < 500) {
+    console.log("[Content] 高优先级选择器未找到足够内容，扫描 body");
+
+    // 查找 body 中最大的文本块
+    const textBlocks = [];
+    const walk = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_ELEMENT,
+      null,
+      false
+    );
+
+    let node;
+    while (node = walk.nextNode()) {
+      // 跳过脚本、样式、导航等元素
+      const tagName = node.tagName?.toLowerCase();
+      if (['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript'].includes(tagName)) {
+        continue;
+      }
+
+      // 跳过样式-only 元素
+      if (isStyleOnlyElement(node)) continue;
+
+      const text = node.textContent?.trim() || '';
+      if (text.length > 500 && text.length < 20000) {
+        textBlocks.push({
+          element: node,
+          text: text,
+          length: text.length
+        });
+      }
+    }
+
+    // 选择内容最长的块
+    if (textBlocks.length > 0) {
+      textBlocks.sort((a, b) => b.length - a.length);
+      bestContent = textBlocks[0].text;
+      console.log(`[Content] 从 body 扫描找到最大文本块，长度: ${bestContent.length}`);
+    }
+  }
+
+  return bestContent;
 }
 
 // 获取网页正文内容
@@ -1256,74 +1372,32 @@ function getPageContent() {
   // 检测是否是知乎页面
   const isZhihu = window.location.hostname.includes('zhihu.com');
   if (isZhihu) {
-    console.log("[Content] 检测到知乎页面，使用知乎特定提取逻辑");
+    console.log("[Content] 检测到知乎页面，使用智能提取模式");
     console.log("[Content] 当前URL:", window.location.href);
     console.log("[Content] 页面标题:", document.title);
 
-    let zhihuContent = '';
-    let bestSelector = '';
-    let maxLength = 0;
+    // 使用智能提取函数
+    const zhihuContent = extractZhihuSmartContent();
 
-    // 尝试从知乎特定的选择器提取内容
-    for (const selector of ZHIHU_CONTENT_SELECTORS) {
-      try {
-        const elements = document.querySelectorAll(selector);
-        if (elements.length > 0) {
-          const selectorContents = [];
-          elements.forEach((el, idx) => {
-            const text = el.innerText?.trim();
-            if (text && text.length > 50) { // 提高阈值，过滤掉短内容
-              selectorContents.push(text);
-            }
-          });
-          const totalLength = selectorContents.join('\n\n').length;
-          if (totalLength > 0) {
-            console.log(`[Content] 知乎选择器 "${selector}" 匹配到 ${elements.length} 个元素，有效内容长度: ${totalLength}`);
-          }
+    if (zhihuContent.length > 0) {
+      console.log(`[Content] 智能提取获取到内容，原始长度: ${zhihuContent.length}`);
 
-          // 选择内容最长的选择器
-          if (totalLength > maxLength) {
-            maxLength = totalLength;
-            zhihuContent = selectorContents.join('\n\n');
-            bestSelector = selector;
-          }
-        }
-      } catch (e) {
-        // 忽略无效选择器
+      // 清理知乎内容
+      const cleanedContent = cleanZhihuContent(zhihuContent);
+      console.log(`[Content] 清理后内容长度: ${cleanedContent.length} (过滤掉 ${zhihuContent.length - cleanedContent.length} 字符)`);
+
+      if (cleanedContent.length > 0) {
+        contents.push("=== 页面主体内容（知乎） ===");
+        contents.push(cleanedContent);
+        // 合并特殊内容
+        contents.unshift(...specialContents);
+        const result = truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
+        console.log("[Content] 最终返回内容长度:", result.length);
+        return result;
       }
     }
 
-    console.log(`[Content] 最佳知乎选择器: "${bestSelector}"，原始内容长度: ${zhihuContent.length}`);
-
-    // 如果知乎特定选择器没有获取到足够内容，尝试从整个页面提取
-    if (zhihuContent.length < 500) {
-      console.log("[Content] 知乎特定选择器获取内容不足，尝试从 body 提取");
-      const bodyText = document.body.innerText?.trim() || '';
-      // 过滤掉脚本和样式
-      const filteredText = bodyText
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
-
-      if (filteredText.length > zhihuContent.length) {
-        zhihuContent = filteredText;
-        bestSelector = 'body.innerText (fallback)';
-        console.log(`[Content] 从 body 获取内容，长度: ${zhihuContent.length}`);
-      }
-    }
-
-    // 清理知乎内容
-    const cleanedContent = cleanZhihuContent(zhihuContent);
-    console.log(`[Content] 清理后内容长度: ${cleanedContent.length} (过滤掉 ${zhihuContent.length - cleanedContent.length} 字符)`);
-
-    if (cleanedContent.length > 0) {
-      contents.push("=== 页面主体内容（知乎） ===");
-      contents.push(cleanedContent);
-      // 合并特殊内容
-      contents.unshift(...specialContents);
-      const result = truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
-      console.log("[Content] 最终返回内容长度:", result.length);
-      return result;
-    }
+    console.log("[Content] 智能提取未找到内容，回退到标准提取");
   }
 
   // 尝试从 article 获取内容
