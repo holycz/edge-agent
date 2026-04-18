@@ -33,8 +33,10 @@ async def stream_chat(request: ChatRequest, page_cookies: dict = None):
         "stream": True,
     }
 
-    if request.enable_thinking is False:
-        body["chat_template_kwargs"] = {"enable_thinking": False}
+    # 根据模型类型决定是否传递 enable_thinking 参数
+    # 只有部分模型（如 Qwen3）支持此参数
+    if request.enable_thinking is not None:
+        body["chat_template_kwargs"] = {"enable_thinking": request.enable_thinking}
 
     proxy_url = (
         os.getenv("HTTPS_PROXY")
@@ -63,159 +65,67 @@ async def stream_chat(request: ChatRequest, page_cookies: dict = None):
                     return
 
                 in_think_block = False
+                think_started = False
 
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
 
-                    # 处理 data: {...} 或 data:{...} 格式
+                    # 处理 data: {...} 或 data:{...} 格式（九天 API 冒号后无空格）
                     data = line[5:].strip()
                     if not data or data == "[DONE]":
+                        if in_think_block:
+                            yield {"type": "chunk", "content": "", "content_type": "think_end"}
                         yield {"type": "done"}
                         return
 
                     try:
                         parsed = json.loads(data)
 
-                        # 检查 finish_reason 标记结束（九天 API）
-                        finish_reason = parsed.get("choices", [{}])[0].get(
-                            "finish_reason"
-                        )
-                        if finish_reason == "stop" or finish_reason == "eos_token":
+                        # 检查 finish_reason 标记结束
+                        finish_reason = parsed.get("choices", [{}])[0].get("finish_reason")
+                        if finish_reason in ("stop", "eos_token", "length"):
+                            if in_think_block:
+                                yield {"type": "chunk", "content": "", "content_type": "think_end"}
                             yield {"type": "done"}
                             return
 
-                        content = (
-                            parsed.get("choices", [{}])[0]
-                            .get("delta", {})
-                            .get("content", "")
-                        )
-                        if not content:
-                            continue
+                        delta = parsed.get("choices", [{}])[0].get("delta", {})
+                        
+                        content = ""
+                        
+                        # 优先处理 reasoning_content 字段（标准 OpenAI 推理格式）
+                        # 部分模型如 kimi-k2-5-thinking 使用此字段
+                        reasoning_content = delta.get("reasoning_content")
+                        if reasoning_content:
+                            if not think_started:
+                                think_started = True
+                                in_think_block = True
+                                yield {"type": "chunk", "content": "", "content_type": "think_start"}
+                            yield {
+                                "type": "chunk",
+                                "content": reasoning_content,
+                                "content_type": "think",
+                            }
+                        
+                        # 处理普通 content 字段
+                        delta_content = delta.get("content", "")
+                        if delta_content:
+                            # 如果之前有 reasoning_content，现在有 content，说明思考结束
+                            if think_started and in_think_block and not reasoning_content:
+                                in_think_block = False
+                                yield {"type": "chunk", "content": "", "content_type": "think_end"}
+                            
+                            # 输出普通内容
+                            yield {
+                                "type": "chunk",
+                                "content": delta_content,
+                                "content_type": "content",
+                            }
 
-                        while content:
-                            if not in_think_block:
-                                think_start = content.find(" <think> ")
-                                if think_start == -1:
-                                    if content:
-                                        yield {
-                                            "type": "chunk",
-                                            "content": content,
-                                            "content_type": "content",
-                                        }
-                                    break
-                                else:
-                                    if think_start > 0:
-                                        before = content[:think_start]
-                                        yield {
-                                            "type": "chunk",
-                                            "content": before,
-                                            "content_type": "content",
-                                        }
-                                    in_think_block = True
-                                    yield {
-                                        "type": "chunk",
-                                        "content": "",
-                                        "content_type": "think_start",
-                                    }
-                                    content = content[think_start + 7 :]
-                            else:
-                                think_end = content.find("回答：")
-                                if think_end == -1:
-                                    if content:
-                                        yield {
-                                            "type": "chunk",
-                                            "content": content,
-                                            "content_type": "think",
-                                        }
-                                    break
-                                else:
-                                    think_text = content[:think_end]
-                                    if think_text:
-                                        yield {
-                                            "type": "chunk",
-                                            "content": think_text,
-                                            "content_type": "think",
-                                        }
-                                    yield {
-                                        "type": "chunk",
-                                        "content": "",
-                                        "content_type": "think_end",
-                                    }
-                                    in_think_block = False
-                                    # 跳过 "回答：" 前缀
-                                    content = content[think_end + 3 :]
                     except json.JSONDecodeError:
                         continue
 
-                    data = line[6:]
-                    if data == "[DONE]":
-                        yield {"type": "done"}
-                        return
-
-                    try:
-                        parsed = json.loads(data)
-                        content = (
-                            parsed.get("choices", [{}])[0]
-                            .get("delta", {})
-                            .get("content", "")
-                        )
-                        if not content:
-                            continue
-
-                        while content:
-                            if not in_think_block:
-                                think_start = content.find("<think>")
-                                if think_start == -1:
-                                    if content:
-                                        yield {
-                                            "type": "chunk",
-                                            "content": content,
-                                            "content_type": "content",
-                                        }
-                                    break
-                                else:
-                                    if think_start > 0:
-                                        before = content[:think_start]
-                                        yield {
-                                            "type": "chunk",
-                                            "content": before,
-                                            "content_type": "content",
-                                        }
-                                    in_think_block = True
-                                    yield {
-                                        "type": "chunk",
-                                        "content": "",
-                                        "content_type": "think_start",
-                                    }
-                                    content = content[think_start + 7 :]
-                            else:
-                                think_end = content.find("</think>")
-                                if think_end == -1:
-                                    if content:
-                                        yield {
-                                            "type": "chunk",
-                                            "content": content,
-                                            "content_type": "think",
-                                        }
-                                    break
-                                else:
-                                    think_text = content[:think_end]
-                                    if think_text:
-                                        yield {
-                                            "type": "chunk",
-                                            "content": think_text,
-                                            "content_type": "think",
-                                        }
-                                    yield {
-                                        "type": "chunk",
-                                        "content": "",
-                                        "content_type": "think_end",
-                                    }
-                                    in_think_block = False
-                                    content = content[think_end + 8 :]
-                    except json.JSONDecodeError:
-                        continue
     except httpx.ConnectError as e:
         yield {
             "type": "error",
