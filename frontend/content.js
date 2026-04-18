@@ -1123,14 +1123,14 @@ function truncateContent(content, maxLength) {
   return result.trim();
 }
 
-// 知乎特定内容提取选择器
-const ZHIHU_CONTENT_SELECTORS = [
-  // 知乎文章主内容区 - 文章详情页
+// 特定网站内容提取选择器
+const SPECIAL_SITE_CONTENT_SELECTORS = [
+  // 文章主内容区 - 文章详情页
   '.Post-RichTextContainer',
   '.Post-content',
   '.Post-NormalMain .RichText',
   '.Post-NormalMain',
-  // 知乎回答内容区
+  // 回答/评论区内容区
   '.RichContent-inner',
   '.RichContent--unescapable',
   '.RichContent',
@@ -1160,8 +1160,8 @@ const ZHIHU_CONTENT_SELECTORS = [
   '.Card'
 ];
 
-// 知乎内容过滤 - 移除 CSS 变量等无关内容
-function cleanZhihuContent(content) {
+// 特定网站内容过滤 - 移除 CSS 变量等无关内容
+function cleanSpecialSiteContent(content) {
   if (!content) return '';
 
   // 过滤掉纯样式内容
@@ -1212,9 +1212,9 @@ function isStyleOnlyElement(element) {
   return false;
 }
 
-// 智能提取知乎内容 - 基于文本密度和内容质量
-function extractZhihuSmartContent() {
-  console.log("[Content] 使用智能提取模式获取知乎内容");
+// 智能提取特定网站内容 - 基于文本密度和内容质量
+function extractSpecialSiteSmartContent() {
+  console.log("[Content] 使用智能提取模式获取特定网站内容");
 
   // 优先选择器 - 按优先级排序
   const prioritySelectors = [
@@ -1308,8 +1308,8 @@ function getPageContent() {
   const contents = [];
   let specialContents = [];
 
-  // 检测是否是知乎页面
-  const isZhihu = window.location.hostname.includes('zhihu.com');
+  // 检测是否是特定网站页面
+  const isSpecialSite = window.location.hostname.includes('zhihu.com');
 
   // 获取弹窗内容
   const modalContents = getModalContent();
@@ -1405,23 +1405,23 @@ function getPageContent() {
     iframeContents.forEach(c => specialContents.push(c));
     specialContents.push("=== iframe 内容结束 ===\n");
   }
-  if (isZhihu) {
-    console.log("[Content] 检测到知乎页面，使用智能提取模式");
+  if (isSpecialSite) {
+    console.log("[Content] 检测到特定网站页面，使用智能提取模式");
     console.log("[Content] 当前URL:", window.location.href);
     console.log("[Content] 页面标题:", document.title);
 
     // 使用智能提取函数
-    const zhihuContent = extractZhihuSmartContent();
+    const specialContent = extractSpecialSiteSmartContent();
 
-    if (zhihuContent.length > 0) {
-      console.log(`[Content] 智能提取获取到内容，原始长度: ${zhihuContent.length}`);
+    if (specialContent.length > 0) {
+      console.log(`[Content] 智能提取获取到内容，原始长度: ${specialContent.length}`);
 
-      // 清理知乎内容
-      const cleanedContent = cleanZhihuContent(zhihuContent);
-      console.log(`[Content] 清理后内容长度: ${cleanedContent.length} (过滤掉 ${zhihuContent.length - cleanedContent.length} 字符)`);
+      // 清理特定网站内容
+      const cleanedContent = cleanSpecialSiteContent(specialContent);
+      console.log(`[Content] 清理后内容长度: ${cleanedContent.length} (过滤掉 ${specialContent.length - cleanedContent.length} 字符)`);
 
       if (cleanedContent.length > 0) {
-        contents.push("=== 页面主体内容（知乎） ===");
+        contents.push("=== 页面主体内容（特定网站） ===");
         contents.push(cleanedContent);
         // 合并特殊内容
         contents.unshift(...specialContents);
