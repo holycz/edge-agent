@@ -789,6 +789,56 @@ html, body {
   color: #2e7d32;
 }
 
+/* API Key 状态显示 */
+.config-status {
+  padding: 10px 14px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid #e0e0e0;
+  font-weight: 500;
+}
+
+.config-status.status-ok {
+  background: #e8f5e9;
+  border-color: #a5d6a7;
+  color: #2e7d32;
+}
+
+.config-status.status-error {
+  background: #fbe9e7;
+  border-color: #ef9a9a;
+  color: #c62828;
+}
+
+.ai-reload-config-btn {
+  background: none;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.ai-reload-config-btn:hover {
+  background: #e3f2fd;
+  border-color: #90caf9;
+}
+
+/* 只读字段显示 */
+.config-readonly-field {
+  padding: 10px 14px;
+  background: #f0f0f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #999;
+  border: 1px solid #e0e0e0;
+  word-break: break-all;
+  cursor: not-allowed;
+}
+
 /* ==================== 思考中动画 ==================== */
 .ai-typing {
   display: flex;

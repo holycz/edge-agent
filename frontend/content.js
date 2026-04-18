@@ -81,7 +81,40 @@ function extractShadowDOMContent(element, collectedContent = []) {
     if (element.shadowRoot) {
       const shadowContent = element.shadowRoot.textContent?.trim();
       if (shadowContent && shadowContent.length > 10) {
-        collectedContent.push(`[Shadow DOM内容]: ${shadowContent}`);
+        // 激进过滤：去除所有 CSS 相关的内容
+        let filteredContent = shadowContent;
+
+        // 移除 CSS 变量定义 (--xxx: value;)
+        filteredContent = filteredContent.replace(/--[a-z0-9-]+:\s*[^;]+;/gi, '');
+
+        // 移除 CSS 类定义 (.class { ... })
+        filteredContent = filteredContent.replace(/\.[a-z0-9_-]+\s*\{[^}]*\}/gi, '');
+
+        // 移除 body 标签定义 (body{...})
+        filteredContent = filteredContent.replace(/body\s*\{[^}]*\}/gi, '');
+
+        // 移除颜色值定义 (rgba(var(--xxx),1))
+        filteredContent = filteredContent.replace(/rgba\(var\([^)]+\),[^)]+\)/gi, '');
+
+        // 移除 hex 颜色值 (#16161a)
+        filteredContent = filteredContent.replace(/#[a-f0-9]{6}/gi, '');
+
+        // 移除连续的数字和逗号
+        filteredContent = filteredContent.replace(/[\d,\s;]{10,}/g, ' ');
+
+        // 清理多余空白
+        filteredContent = filteredContent.replace(/\s+/g, ' ').trim();
+
+        // 检查过滤后是否仍有有效内容（至少包含一些中文字符或有意义的单词）
+        const hasChinese = /[\u4e00-\u9fa5]/.test(filteredContent);
+        const hasWords = /\b[a-z]{4,}\b/i.test(filteredContent);
+        const hasSentences = filteredContent.split(/[.!?。！？]\s*/).filter(s => s.trim().length > 10).length > 0;
+
+        if ((hasChinese || (hasWords && hasSentences)) && filteredContent.length > 50) {
+          collectedContent.push(`[Shadow DOM内容]: ${filteredContent.substring(0, 5000)}`);
+        } else {
+          console.log("[Content] Shadow DOM 内容被过滤（主要是样式信息）");
+        }
       }
 
       // 递归检查 Shadow DOM 中的子元素
@@ -1275,6 +1308,9 @@ function getPageContent() {
   const contents = [];
   let specialContents = [];
 
+  // 检测是否是知乎页面
+  const isZhihu = window.location.hostname.includes('zhihu.com');
+
   // 获取弹窗内容
   const modalContents = getModalContent();
   if (modalContents.length > 0) {
@@ -1351,14 +1387,15 @@ function getPageContent() {
     specialContents.push("\n=== 数据表格结束 ===\n");
   }
 
-  // 获取 Shadow DOM 内容
-  const shadowContents = [];
-  extractShadowDOMContent(document.body, shadowContents);
-  if (shadowContents.length > 0) {
-    specialContents.push("=== Shadow DOM 内容 ===");
-    shadowContents.forEach(c => specialContents.push(c));
-    specialContents.push("=== Shadow DOM 内容结束 ===\n");
-  }
+  // Shadow DOM 内容提取已禁用 - 通常只包含组件样式，不包含有用的正文内容
+  // 如需启用，请取消下面的注释：
+  // const shadowContents = [];
+  // extractShadowDOMContent(document.body, shadowContents);
+  // if (shadowContents.length > 0) {
+  //   specialContents.push("=== Shadow DOM 内容 ===");
+  //   shadowContents.forEach(c => specialContents.push(c));
+  //   specialContents.push("=== Shadow DOM 内容结束 ===\n");
+  // }
 
   // 获取 iframe 内容
   const iframeContents = [];
@@ -1368,9 +1405,6 @@ function getPageContent() {
     iframeContents.forEach(c => specialContents.push(c));
     specialContents.push("=== iframe 内容结束 ===\n");
   }
-
-  // 检测是否是知乎页面
-  const isZhihu = window.location.hostname.includes('zhihu.com');
   if (isZhihu) {
     console.log("[Content] 检测到知乎页面，使用智能提取模式");
     console.log("[Content] 当前URL:", window.location.href);
@@ -1554,6 +1588,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } catch (e) {
       console.error("[Content] 获取页面上下文失败:", e);
       sendResponse({ content: "", metadata: {}, error: e.message });
+    }
+    return true;
+  }
+
+  if (msg.type === "GET_PAGE_COOKIES") {
+    try {
+      console.log("[Content] 收到 GET_PAGE_COOKIES 请求");
+      const cookies = document.cookie;
+      const localStorageData = {};
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          localStorageData[key] = localStorage.getItem(key);
+        }
+      } catch (e) {
+        console.warn("[Content] 读取 localStorage 失败:", e.message);
+      }
+      const sessionStorageData = {};
+      try {
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const key = sessionStorage.key(i);
+          sessionStorageData[key] = sessionStorage.getItem(key);
+        }
+      } catch (e) {
+        console.warn("[Content] 读取 sessionStorage 失败:", e.message);
+      }
+      sendResponse({
+        cookies: cookies,
+        localStorage: localStorageData,
+        sessionStorage: sessionStorageData,
+        url: window.location.href,
+        domain: window.location.hostname
+      });
+    } catch (e) {
+      console.error("[Content] 获取页面存储数据失败:", e);
+      sendResponse({ cookies: "", localStorage: {}, sessionStorage: {}, url: window.location.href, domain: "", error: e.message });
     }
     return true;
   }

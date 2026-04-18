@@ -54,24 +54,12 @@
   </div>
   <div class="ai-config-content">
     <div class="ai-config-item">
-      <label>API Key</label>
-      <input type="password" class="ai-config-input" id="ai-api-key" placeholder="输入你的 API Key">
-    </div>
-    <div class="ai-config-item">
-      <label>API URL</label>
-      <input type="text" class="ai-config-input" id="ai-api-url" placeholder="https://integrate.api.nvidia.com/v1">
-    </div>
-    <div class="ai-config-item">
-      <label>模型名称</label>
-      <input type="text" class="ai-config-input" id="ai-model" placeholder="qwen/qwen3-next-80b-a3b-instruct">
-    </div>
-    <div class="ai-config-item">
-      <label>Temperature (0-2)</label>
-      <input type="number" class="ai-config-input" id="ai-temperature" min="0" max="2" step="0.1" value="0.7">
-    </div>
-    <div class="ai-config-item">
-      <label>Max Tokens</label>
-      <input type="number" class="ai-config-input" id="ai-max-tokens" min="1" max="8192" value="2048">
+      <label>API Key 状态</label>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div id="ai-api-key-status" class="config-status status-error">未配置</div>
+        <button class="ai-reload-config-btn" id="ai-reload-config" title="重新加载后端 .env 配置">🔄</button>
+      </div>
+      <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">API 配置由后端 .env 文件管理；修改 .env 后点击 🔄 热加载，无需重启后端</small>
     </div>
 
     <div class="ai-config-section">
