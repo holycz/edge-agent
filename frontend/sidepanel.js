@@ -655,17 +655,6 @@ async function sendMessage() {
   inputTextarea.style.height = 'auto';
 
   addMessage('user', text);
-  conversationHistory.push({ role: 'user', content: text });
-
-  // 保存消息到当前会话
-  SessionManager.saveCurrentSessionMessages();
-
-  // 如果是第一条消息，自动生成标题
-  const currentSession = SessionManager.getCurrentSession();
-  if (currentSession && currentSession.messages.length <= 2) {
-    SessionManager.autoGenerateTitle(currentSession.id, text);
-    renderSessionList();
-  }
 
   let pageContext = null;
   if (config.useContext) {
@@ -697,6 +686,15 @@ async function sendMessage() {
       return;
     }
 
+    conversationHistory.push({ role: 'user', content: text });
+    SessionManager.saveCurrentSessionMessages();
+
+    const currentSession = SessionManager.getCurrentSession();
+    if (currentSession && currentSession.messages.length <= 2) {
+      SessionManager.autoGenerateTitle(currentSession.id, text);
+      renderSessionList();
+    }
+
     await askAI(promptData.messages, promptData.enable_thinking);
   } catch (e) {
     addMessage('bot', '后端连接失败: ' + e.message);
@@ -720,9 +718,9 @@ function addMessage(role, text) {
     bubble.textContent = text;
     content.appendChild(bubble);
   } else {
+    const bubble = document.createElement('div');
+    bubble.className = `ai-msg ai-${role}`;
     if (text === '思考中...') {
-      const bubble = document.createElement('div');
-      bubble.className = `ai-msg ai-${role}`;
       bubble.innerHTML = `
         <div class="ai-typing">
           <div class="ai-typing-dot"></div>
@@ -730,8 +728,10 @@ function addMessage(role, text) {
           <div class="ai-typing-dot"></div>
         </div>
       `;
-      content.appendChild(bubble);
+    } else {
+      bubble.innerHTML = parseMarkdown(text);
     }
+    content.appendChild(bubble);
   }
 
   if (role === 'user') {
