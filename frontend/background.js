@@ -1,5 +1,8 @@
 const BACKEND_URL = "http://localhost:8765";
 
+// 存储活动的流式请求控制器，用于中止
+const activeStreams = new Map();
+
 async function createContextMenus() {
   await chrome.contextMenus.removeAll();
   console.log("[Background] 已清除旧菜单");
@@ -154,6 +157,18 @@ chrome.action.onClicked.addListener(async (tab) => {
   await chrome.sidePanel.open({ windowId: tab.windowId });
 });
 
+// 中止流式请求的函数
+function abortStream(sessionId) {
+  const controller = activeStreams.get(sessionId);
+  if (controller) {
+    console.log("[Background] 中止流式请求:", sessionId);
+    controller.abort();
+    activeStreams.delete(sessionId);
+    return true;
+  }
+  return false;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "OPEN_SIDEPANEL") {
     if (!sender.tab || !sender.tab.windowId) {
@@ -171,101 +186,156 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type !== "API_STREAM_REQUEST") return false;
+  if (msg.type === "ABORT_STREAM") {
+    const sessionId = msg.sessionId || 'default';
+    const success = abortStream(sessionId);
+    sendResponse({ success });
+    return true;
+  }
 
-  console.log("[Background] 收到后端 API 代理请求");
+  if (msg.type === "API_STREAM_REQUEST") {
+    const sessionId = msg.sessionId || 'default';
+    console.log("[Background] 收到后端 API 代理请求, sessionId:", sessionId);
 
-  (async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: msg.body
-      });
+    (async () => {
+      const abortController = new AbortController();
+      activeStreams.set(sessionId, abortController);
 
-      console.log("[Background] 后端响应状态:", res.status, res.statusText);
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: msg.body,
+          signal: abortController.signal
+        });
 
-      if (!res.ok) {
-        const errorBody = await res.text();
-        console.error("[Background] 后端错误响应:", errorBody);
-        let errorMessage = `HTTP ${res.status}: ${res.statusText}`;
-        try {
-          const errorJson = JSON.parse(errorBody);
-          if (errorJson.detail) {
-            errorMessage = errorJson.detail;
-          }
-        } catch (e) {}
-        chrome.runtime.sendMessage({
-          type: "STREAM_ERROR",
-          error: errorMessage
-        }).catch(() => {});
-        return;
-      }
+        console.log("[Background] 后端响应状态:", res.status, res.statusText);
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-
-          const dataStr = trimmed.substring(6);
-          if (!dataStr) continue;
-
+        if (!res.ok) {
+          const errorBody = await res.text();
+          console.error("[Background] 后端错误响应:", errorBody);
+          let errorMessage = `HTTP ${res.status}: ${res.statusText}`;
           try {
-            const parsed = JSON.parse(dataStr);
-
-            if (parsed.type === "STREAM_ERROR") {
-              chrome.runtime.sendMessage({
-                type: "STREAM_ERROR",
-                error: parsed.error
-              }).catch(() => {});
-              return;
+            const errorJson = JSON.parse(errorBody);
+            if (errorJson.detail) {
+              errorMessage = errorJson.detail;
             }
+          } catch (e) {}
+          chrome.runtime.sendMessage({
+            type: "STREAM_ERROR",
+            error: errorMessage,
+            sessionId
+          }).catch(() => {});
+          activeStreams.delete(sessionId);
+          return;
+        }
 
-            if (parsed.type === "STREAM_DONE") {
-              chrome.runtime.sendMessage({
-                type: "STREAM_DONE"
-              }).catch(() => {});
-              return;
-            }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
 
-            if (parsed.type === "STREAM_CHUNK") {
-              chrome.runtime.sendMessage({
-                type: "STREAM_CHUNK",
-                content: parsed.content,
-                contentType: parsed.contentType
-              }).catch(() => {});
+        let buffer = '';
+
+        while (true) {
+          // 检查是否已中止
+          if (abortController.signal.aborted) {
+            console.log("[Background] 流式请求已中止");
+            chrome.runtime.sendMessage({
+              type: "STREAM_ABORTED",
+              sessionId
+            }).catch(() => {});
+            activeStreams.delete(sessionId);
+            return;
+          }
+
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // 检查是否已中止
+          if (abortController.signal.aborted) {
+            console.log("[Background] 流式请求已中止");
+            chrome.runtime.sendMessage({
+              type: "STREAM_ABORTED",
+              sessionId
+            }).catch(() => {});
+            activeStreams.delete(sessionId);
+            return;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+
+            const dataStr = trimmed.substring(6);
+            if (!dataStr) continue;
+
+            try {
+              const parsed = JSON.parse(dataStr);
+
+              if (parsed.type === "STREAM_ERROR") {
+                chrome.runtime.sendMessage({
+                  type: "STREAM_ERROR",
+                  error: parsed.error,
+                  sessionId
+                }).catch(() => {});
+                activeStreams.delete(sessionId);
+                return;
+              }
+
+              if (parsed.type === "STREAM_DONE") {
+                chrome.runtime.sendMessage({
+                  type: "STREAM_DONE",
+                  sessionId
+                }).catch(() => {});
+                activeStreams.delete(sessionId);
+                return;
+              }
+
+              if (parsed.type === "STREAM_CHUNK") {
+                chrome.runtime.sendMessage({
+                  type: "STREAM_CHUNK",
+                  content: parsed.content,
+                  contentType: parsed.contentType,
+                  sessionId
+                }).catch(() => {});
+              }
+            } catch (e) {
+              // ignore parse errors for partial chunks
             }
-          } catch (e) {
-            // ignore parse errors for partial chunks
           }
         }
+
+        chrome.runtime.sendMessage({
+          type: "STREAM_DONE",
+          sessionId
+        }).catch(() => {});
+        activeStreams.delete(sessionId);
+      } catch (e) {
+        if (e.name === 'AbortError') {
+          console.log("[Background] 流式请求被中止");
+          chrome.runtime.sendMessage({
+            type: "STREAM_ABORTED",
+            sessionId
+          }).catch(() => {});
+        } else {
+          console.error("[Background] 后端请求异常:", e);
+          chrome.runtime.sendMessage({
+            type: "STREAM_ERROR",
+            error: `后端连接失败: ${e.message}。请确保后端服务已启动 (${BACKEND_URL})`,
+            sessionId
+          }).catch(() => {});
+        }
+        activeStreams.delete(sessionId);
       }
+    })();
 
-      chrome.runtime.sendMessage({
-        type: "STREAM_DONE"
-      }).catch(() => {});
-    } catch (e) {
-      console.error("[Background] 后端请求异常:", e);
-      chrome.runtime.sendMessage({
-        type: "STREAM_ERROR",
-        error: `后端连接失败: ${e.message}。请确保后端服务已启动 (${BACKEND_URL})`
-      }).catch(() => {});
-    }
-  })();
+    return true;
+  }
 
-  return true;
+  return false;
 });

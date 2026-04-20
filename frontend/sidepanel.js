@@ -17,6 +17,21 @@ const FEATURE_PROMPTS = {
   summarizeLeaderComments: { label: '总结领导批示', icon: '👔' },
 };
 
+// ========== 内置提示词模板 ==========
+const BUILT_IN_PROMPTS = [
+  { id: 'builtin_1', title: '💻 解释代码', content: '请详细解释这段代码的功能、逻辑和关键实现细节：\n\n{{selection}}', icon: '💻', isBuiltIn: true },
+  { id: 'builtin_2', title: '📝 总结文字', content: '请对以下内容进行简明扼要的总结，提取核心要点：\n\n{{selection}}', icon: '📝', isBuiltIn: true },
+  { id: 'builtin_3', title: '✨ 润色文字', content: '请对以下文字进行润色和改写，使其更加流畅、专业、易读：\n\n{{selection}}', icon: '✨', isBuiltIn: true },
+  { id: 'builtin_4', title: '🔍 稽核检查', content: '请对以下文字进行细致的稽核，检查是否存在错别字、语法问题、格式问题或表达不当的地方，并给出修改建议：\n\n{{selection}}', icon: '🔍', isBuiltIn: true },
+  { id: 'builtin_5', title: '🌐 翻译中文', content: '请将以下内容翻译成中文，保持原意的同时力求自然流畅：\n\n{{selection}}', icon: '🌐', isBuiltIn: true },
+  { id: 'builtin_6', title: '🇺🇸 翻译英文', content: '请将以下内容翻译成英文，保持原意的同时力求自然地道：\n\n{{selection}}', icon: '🇺🇸', isBuiltIn: true },
+  { id: 'builtin_7', title: '🐛 查找 Bug', content: '请仔细检查以下代码，找出潜在的bug、安全漏洞或性能问题，并给出修复建议：\n\n{{selection}}', icon: '🐛', isBuiltIn: true },
+  { id: 'builtin_8', title: '📋 生成文档', content: '请为以下代码或功能生成详细的文档说明，包括功能描述、参数说明、使用示例等：\n\n{{selection}}', icon: '📋', isBuiltIn: true },
+  { id: 'builtin_9', title: '⚡ 优化代码', content: '请对以下代码进行优化，提升其性能、可读性或简化逻辑：\n\n{{selection}}', icon: '⚡', isBuiltIn: true },
+  { id: 'builtin_10', title: '💡 提供建议', content: '请对以下内容进行分析，并给出专业、实用的建议或改进方案：\n\n{{selection}}', icon: '💡', isBuiltIn: true },
+];
+
+// ========== 全局状态 ==========
 let config = { ...DEFAULT_CONFIG };
 let currentBotBubble = null;
 let currentThinkBubble = null;
@@ -27,12 +42,257 @@ let isProcessingPending = false;
 let pageContextCache = null;
 let pageCookiesCache = null;
 let isInThinkBlock = false;
+
+// 流式请求状态
+let isStreaming = false;
+let currentStreamSessionId = null;
+
+// 会话相关状态（现在存储在 chrome.storage.local 中）
+let sessions = [];
+let currentSessionId = null;
+let promptTemplates = [];
+
+// 为了向后兼容，内存中仍保留当前对话历史（实际已保存在当前会话中）
 let conversationHistory = [];
 
 const messagesContainer = document.getElementById('ai-messages');
 const inputTextarea = document.getElementById('ai-input');
 const sendButton = document.getElementById('ai-send');
 const configPanel = document.getElementById('ai-config-panel');
+
+// ========== Storage Manager - 数据持久化 ==========
+const StorageManager = {
+  async loadSessions() {
+    try {
+      const data = await chrome.storage.local.get(['sessions', 'currentSessionId']);
+      sessions = data.sessions || [];
+      currentSessionId = data.currentSessionId || null;
+      console.log('[Storage] 加载会话:', sessions.length, '当前会话ID:', currentSessionId);
+      return sessions;
+    } catch (e) {
+      console.error('[Storage] 加载会话失败:', e);
+      sessions = [];
+      currentSessionId = null;
+      return [];
+    }
+  },
+
+  async saveSessions() {
+    try {
+      await chrome.storage.local.set({ sessions, currentSessionId });
+      console.log('[Storage] 保存会话成功:', sessions.length);
+    } catch (e) {
+      console.error('[Storage] 保存会话失败:', e);
+    }
+  },
+
+  async loadPromptTemplates() {
+    try {
+      const data = await chrome.storage.local.get(['promptTemplates']);
+      promptTemplates = data.promptTemplates || [];
+      console.log('[Storage] 加载提示词模板:', promptTemplates.length);
+      return promptTemplates;
+    } catch (e) {
+      console.error('[Storage] 加载提示词模板失败:', e);
+      promptTemplates = [];
+      return [];
+    }
+  },
+
+  async savePromptTemplates() {
+    try {
+      await chrome.storage.local.set({ promptTemplates });
+      console.log('[Storage] 保存提示词模板成功:', promptTemplates.length);
+    } catch (e) {
+      console.error('[Storage] 保存提示词模板失败:', e);
+    }
+  },
+
+  async exportData() {
+    const data = await chrome.storage.local.get(['sessions', 'promptTemplates']);
+    return JSON.stringify(data, null, 2);
+  },
+
+  async importData(jsonString) {
+    try {
+      const data = JSON.parse(jsonString);
+      if (data.sessions) await chrome.storage.local.set({ sessions: data.sessions });
+      if (data.promptTemplates) await chrome.storage.local.set({ promptTemplates: data.promptTemplates });
+      await this.loadSessions();
+      await this.loadPromptTemplates();
+      return true;
+    } catch (e) {
+      console.error('[Storage] 导入数据失败:', e);
+      return false;
+    }
+  },
+
+  async clearAllData() {
+    try {
+      await chrome.storage.local.remove(['sessions', 'currentSessionId', 'promptTemplates']);
+      sessions = [];
+      currentSessionId = null;
+      promptTemplates = [];
+      console.log('[Storage] 已清空所有数据');
+      return true;
+    } catch (e) {
+      console.error('[Storage] 清空数据失败:', e);
+      return false;
+    }
+  }
+};
+
+// ========== Session Manager - 会话管理 ==========
+const SessionManager = {
+  generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  },
+
+  createSession(title = '新会话') {
+    const session = {
+      id: this.generateId(),
+      title: title.substring(0, 50),
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      pageContext: null
+    };
+    sessions.unshift(session);
+    currentSessionId = session.id;
+    StorageManager.saveSessions();
+    return session;
+  },
+
+  getCurrentSession() {
+    return sessions.find(s => s.id === currentSessionId) || null;
+  },
+
+  switchSession(sessionId) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (session) {
+      currentSessionId = sessionId;
+      conversationHistory = [...session.messages];
+      StorageManager.saveSessions();
+      return session;
+    }
+    return null;
+  },
+
+  deleteSession(sessionId) {
+    const index = sessions.findIndex(s => s.id === sessionId);
+    if (index > -1) {
+      sessions.splice(index, 1);
+      if (currentSessionId === sessionId) {
+        currentSessionId = sessions.length > 0 ? sessions[0].id : null;
+        if (currentSessionId) {
+          const newSession = sessions.find(s => s.id === currentSessionId);
+          conversationHistory = newSession ? [...newSession.messages] : [];
+        } else {
+          conversationHistory = [];
+        }
+      }
+      StorageManager.saveSessions();
+      return true;
+    }
+    return false;
+  },
+
+  updateSessionTitle(sessionId, newTitle) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (session) {
+      session.title = newTitle.substring(0, 50);
+      session.updatedAt = Date.now();
+      StorageManager.saveSessions();
+      return true;
+    }
+    return false;
+  },
+
+  saveCurrentSessionMessages() {
+    const session = this.getCurrentSession();
+    if (session) {
+      session.messages = [...conversationHistory];
+      session.updatedAt = Date.now();
+      StorageManager.saveSessions();
+    } else if (conversationHistory.length > 0) {
+      // 如果没有当前会话但有消息，创建新会话
+      this.createSession('新会话');
+      const newSession = this.getCurrentSession();
+      if (newSession) {
+        newSession.messages = [...conversationHistory];
+        newSession.updatedAt = Date.now();
+        StorageManager.saveSessions();
+      }
+    }
+  },
+
+  autoGenerateTitle(sessionId, firstMessage) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (session && session.title === '新会话' && firstMessage) {
+      const title = firstMessage.substring(0, 20) + (firstMessage.length > 20 ? '...' : '');
+      session.title = title;
+      session.updatedAt = Date.now();
+      StorageManager.saveSessions();
+    }
+  }
+};
+
+// ========== Prompt Manager - 提示词模板管理 ==========
+const PromptManager = {
+  getAllPrompts() {
+    return [...BUILT_IN_PROMPTS, ...promptTemplates];
+  },
+
+  createCustomPrompt(title, content, icon = '💬') {
+    const prompt = {
+      id: 'custom_' + Date.now(),
+      title: title.substring(0, 30),
+      content: content,
+      icon: icon,
+      isBuiltIn: false,
+      createdAt: Date.now()
+    };
+    promptTemplates.push(prompt);
+    StorageManager.savePromptTemplates();
+    return prompt;
+  },
+
+  updatePrompt(promptId, title, content, icon) {
+    const prompt = promptTemplates.find(p => p.id === promptId);
+    if (prompt) {
+      prompt.title = title.substring(0, 30);
+      prompt.content = content;
+      if (icon) prompt.icon = icon;
+      StorageManager.savePromptTemplates();
+      return true;
+    }
+    return false;
+  },
+
+  deletePrompt(promptId) {
+    const index = promptTemplates.findIndex(p => p.id === promptId);
+    if (index > -1) {
+      promptTemplates.splice(index, 1);
+      StorageManager.savePromptTemplates();
+      return true;
+    }
+    return false;
+  },
+
+  getPromptById(promptId) {
+    return BUILT_IN_PROMPTS.find(p => p.id === promptId) ||
+           promptTemplates.find(p => p.id === promptId) ||
+           null;
+  },
+
+  applyPrompt(promptId, selection = '') {
+    const prompt = this.getPromptById(promptId);
+    if (prompt) {
+      return prompt.content.replace(/\{\{selection\}\}/g, selection);
+    }
+    return null;
+  }
+};
 
 async function getBackendUrl() {
   return new Promise((resolve) => {
@@ -47,6 +307,32 @@ async function init() {
     await loadConfig();
     initMarkdownParser();
     setupEventListeners();
+    setupSessionPanelListeners();
+    setupPromptPanelListeners();
+
+    // 加载会话和提示词数据
+    await StorageManager.loadSessions();
+    await StorageManager.loadPromptTemplates();
+    renderSessionList();
+    renderQuickPrompts();
+
+    // 恢复当前会话
+    if (currentSessionId) {
+      const session = SessionManager.getCurrentSession();
+      if (session && session.messages.length > 0) {
+        conversationHistory = [...session.messages];
+        renderConversationHistory();
+        console.log("[Sidepanel] 恢复会话:", session.title, "消息数:", session.messages.length);
+      } else {
+        // 创建新会话
+        SessionManager.createSession('新会话');
+        renderSessionList();
+      }
+    } else {
+      // 没有当前会话，创建新会话
+      SessionManager.createSession('新会话');
+      renderSessionList();
+    }
 
     console.log("[Sidepanel] 初始化完成，检查待处理问题...");
     await checkPendingQuestion();
@@ -130,6 +416,7 @@ async function checkPendingQuestion() {
             }
 
             conversationHistory.push({ role: 'user', content: `${feature.icon} ${feature.label}：「${shortText}」` });
+            SessionManager.saveCurrentSessionMessages();
             await askAI(promptData.messages, promptData.enable_thinking);
           } catch (e) {
             addMessage('bot', '后端连接失败: ' + e.message);
@@ -175,6 +462,7 @@ async function handlePageSummary(action) {
     role: 'user',
     content: `${feature.icon} ${feature.label}`
   });
+  SessionManager.saveCurrentSessionMessages();
 
   const backendUrl = await getBackendUrl();
   try {
@@ -281,7 +569,13 @@ async function saveConfig(newConfig) {
 }
 
 function setupEventListeners() {
-  sendButton.addEventListener('click', sendMessage);
+  sendButton.addEventListener('click', () => {
+    if (isStreaming) {
+      abortStream();
+    } else {
+      sendMessage();
+    }
+  });
 
   inputTextarea.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -363,6 +657,16 @@ async function sendMessage() {
   addMessage('user', text);
   conversationHistory.push({ role: 'user', content: text });
 
+  // 保存消息到当前会话
+  SessionManager.saveCurrentSessionMessages();
+
+  // 如果是第一条消息，自动生成标题
+  const currentSession = SessionManager.getCurrentSession();
+  if (currentSession && currentSession.messages.length <= 2) {
+    SessionManager.autoGenerateTitle(currentSession.id, text);
+    renderSessionList();
+  }
+
   let pageContext = null;
   if (config.useContext) {
     pageContext = await getCurrentPageContext();
@@ -370,7 +674,7 @@ async function sendMessage() {
 
   const backendUrl = await getBackendUrl();
   const enableThinkCheckbox = document.getElementById('ai-enable-think');
-  const enableThinking = enableThinkCheckbox ? enableThinkCheckbox.checked : true;
+  const enableThinking = enableThinkCheckbox ? enableThinkCheckbox.checked : false;
 
   try {
     const promptRes = await fetch(`${backendUrl}/api/build-prompt`, {
@@ -710,7 +1014,7 @@ function updateContextStatus(status) {
   }
 }
 
-async function askAI(messages, enableThinking = true) {
+async function askAI(messages, enableThinking = false) {
   await loadConfig();
 
   console.log("[Sidepanel] askAI 被调用，消息数:", messages.length, "apiKeySet:", config.apiKeySet);
@@ -728,6 +1032,11 @@ async function askAI(messages, enableThinking = true) {
   accumulatedThinkText = '';
   isInThinkBlock = false;
 
+  // 设置流式请求状态
+  isStreaming = true;
+  currentStreamSessionId = 'stream_' + Date.now();
+  updateSendButtonState();
+
   const pageCookies = await getPageCookies();
 
   const requestBody = {
@@ -741,12 +1050,80 @@ async function askAI(messages, enableThinking = true) {
     chrome.runtime.sendMessage({
       type: 'API_STREAM_REQUEST',
       body: JSON.stringify(requestBody),
+      sessionId: currentStreamSessionId,
     });
   } catch (e) {
     if (currentBotBubble) {
       currentBotBubble.innerHTML = '出错：' + e.message;
     }
     currentBotBubble = null;
+    isStreaming = false;
+    updateSendButtonState();
+  }
+}
+
+// 中止流式请求
+function abortStream() {
+  if (isStreaming && currentStreamSessionId) {
+    chrome.runtime.sendMessage({
+      type: 'ABORT_STREAM',
+      sessionId: currentStreamSessionId,
+    }, (response) => {
+      console.log("[Sidepanel] 中止请求响应:", response);
+    });
+
+    // 更新 UI 显示已中止
+    if (currentBotBubble) {
+      const contentBubble = currentBotBubble.content.querySelector('.ai-bot:not(.ai-think)');
+      if (contentBubble && accumulatedText) {
+        contentBubble.innerHTML = parseMarkdown(accumulatedText + '\n\n*[已中止]*');
+      } else if (!contentBubble && !accumulatedText) {
+        const bubble = createContentBubble(currentBotBubble.content);
+        bubble.innerHTML = '*[已中止]*';
+      }
+    }
+
+    // 保存已接收的内容
+    if (accumulatedText.trim() || accumulatedThinkText.trim()) {
+      const fullResponse = accumulatedThinkText
+        ? `  \n${accumulatedThinkText}\n\n${accumulatedText}\n\n*[已中止]*`
+        : `${accumulatedText}\n\n*[已中止]*`;
+      conversationHistory.push({ role: 'assistant', content: fullResponse });
+      SessionManager.saveCurrentSessionMessages();
+      renderSessionList();
+    }
+
+    // 重置状态
+    isStreaming = false;
+    currentStreamSessionId = null;
+    updateSendButtonState();
+    resetStreamState();
+    showToast('已中止回复');
+  }
+}
+
+// 重置流式状态
+function resetStreamState() {
+  currentBotBubble = null;
+  currentThinkBubble = null;
+  currentThinkContainer = null;
+  accumulatedText = '';
+  accumulatedThinkText = '';
+  isInThinkBlock = false;
+}
+
+// 更新发送按钮状态（发送/中止切换）
+function updateSendButtonState() {
+  if (!sendButton) return;
+
+  if (isStreaming) {
+    sendButton.textContent = '⏹';
+    sendButton.classList.add('ai-stop');
+    sendButton.title = '中止回复';
+  } else {
+    sendButton.textContent = '发送';
+    sendButton.classList.remove('ai-stop');
+    sendButton.title = '发送消息';
   }
 }
 
@@ -806,7 +1183,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
-  } else if (msg.type === 'STREAM_DONE') {
+  } else if (msg.type === 'STREAM_DONE' || msg.type === 'STREAM_ABORTED') {
     const fullResponse = accumulatedThinkText
       ? `  \n${accumulatedThinkText}\n\n${accumulatedText}`
       : accumulatedText;
@@ -826,7 +1203,17 @@ chrome.runtime.onMessage.addListener((msg) => {
         conversationHistory = [...systemMessages, ...recentMessages];
         console.log("[Sidepanel] 已清理旧历史，新历史长度:", conversationHistory.length);
       }
+
+      // 自动保存到当前会话
+      SessionManager.saveCurrentSessionMessages();
+      // 更新会话列表显示（更新时间和标题）
+      renderSessionList();
     }
+
+    // 重置流式状态
+    isStreaming = false;
+    currentStreamSessionId = null;
+    updateSendButtonState();
 
     currentBotBubble = null;
     currentThinkBubble = null;
@@ -847,12 +1234,11 @@ chrome.runtime.onMessage.addListener((msg) => {
     } else {
       addMessage('bot', '出错：' + msg.error);
     }
-    currentBotBubble = null;
-    currentThinkBubble = null;
-    currentThinkContainer = null;
-    accumulatedText = '';
-    accumulatedThinkText = '';
-    isInThinkBlock = false;
+    // 重置流式状态
+    isStreaming = false;
+    currentStreamSessionId = null;
+    updateSendButtonState();
+    resetStreamState();
   }
 });
 
@@ -860,8 +1246,370 @@ function clearMessages() {
   messagesContainer.innerHTML = '';
   clearContextCache();
   conversationHistory = [];
-  console.log("[Sidepanel] 已清空对话和历史记录");
+  // 创建新会话
+  SessionManager.createSession('新会话');
+  renderSessionList();
+  console.log("[Sidepanel] 已创建新会话");
   showToast('已新建对话');
+}
+
+// ========== 会话面板 UI 功能 ==========
+function toggleSessionPanel() {
+  const sidebar = document.getElementById('ai-sidebar-left');
+  const isCollapsed = sidebar.classList.contains('collapsed');
+  if (isCollapsed) {
+    sidebar.classList.remove('collapsed');
+    renderSessionList();
+  } else {
+    sidebar.classList.add('collapsed');
+  }
+}
+
+function renderSessionList() {
+  const list = document.getElementById('ai-session-list');
+  list.innerHTML = '';
+
+  // 按更新时间排序
+  const sortedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  sortedSessions.forEach(session => {
+    const item = document.createElement('div');
+    item.className = 'ai-session-item' + (session.id === currentSessionId ? ' active' : '');
+    item.dataset.id = session.id;
+
+    const title = document.createElement('div');
+    title.className = 'ai-session-item-title';
+    title.textContent = session.title || '新会话';
+    title.title = session.title || '新会话';
+
+    const actions = document.createElement('div');
+    actions.className = 'ai-session-item-actions';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'ai-session-item-action';
+    deleteBtn.innerHTML = '🗑️';
+    deleteBtn.title = '删除会话';
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      deleteSession(session.id);
+    };
+
+    actions.appendChild(deleteBtn);
+    item.appendChild(title);
+    item.appendChild(actions);
+
+    item.onclick = () => switchToSession(session.id);
+
+    list.appendChild(item);
+  });
+}
+
+function switchToSession(sessionId) {
+  const session = SessionManager.switchSession(sessionId);
+  if (session) {
+    renderSessionList();
+    renderConversationHistory();
+    showToast(`切换到: ${session.title}`);
+  }
+}
+
+function renderConversationHistory() {
+  messagesContainer.innerHTML = '';
+  conversationHistory.forEach(msg => {
+    if (msg.role !== 'system') {
+      addMessage(msg.role === 'assistant' ? 'bot' : 'user', msg.content);
+    }
+  });
+}
+
+function deleteSession(sessionId) {
+  if (confirm('确定要删除这个会话吗？此操作不可恢复。')) {
+    SessionManager.deleteSession(sessionId);
+    renderSessionList();
+    renderConversationHistory();
+    if (currentSessionId === null) {
+      // 所有会话都删除了，创建新会话
+      SessionManager.createSession('新会话');
+      renderSessionList();
+    }
+    showToast('会话已删除');
+  }
+}
+
+function setupSessionPanelListeners() {
+  const toggleBtn = document.getElementById('ai-toggle-sidebar');
+  const newSessionBtn = document.getElementById('ai-new-session-btn');
+  const closeBtn = document.getElementById('ai-session-panel-close');
+  const exportBtn = document.getElementById('ai-export-data');
+  const importBtn = document.getElementById('ai-import-data');
+  const clearAllBtn = document.getElementById('ai-clear-all-data');
+  const managePromptsBtn = document.getElementById('ai-manage-prompts');
+
+  if (toggleBtn) toggleBtn.addEventListener('click', toggleSessionPanel);
+  if (newSessionBtn) newSessionBtn.addEventListener('click', () => {
+    clearMessages();
+    toggleSessionPanel();
+  });
+  if (closeBtn) closeBtn.addEventListener('click', toggleSessionPanel);
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      const data = await StorageManager.exportData();
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ai-assistant-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('数据已导出');
+    });
+  }
+
+  if (importBtn) {
+    importBtn.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const text = await file.text();
+          if (await StorageManager.importData(text)) {
+            renderSessionList();
+            renderConversationHistory();
+            renderQuickPrompts();
+            showToast('数据已导入');
+          } else {
+            showToast('导入失败，请检查文件格式');
+          }
+        }
+      };
+      input.click();
+    });
+  }
+
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', async () => {
+      if (confirm('确定要清空所有会话和提示词数据吗？此操作不可恢复！')) {
+        await StorageManager.clearAllData();
+        messagesContainer.innerHTML = '';
+        conversationHistory = [];
+        SessionManager.createSession('新会话');
+        renderSessionList();
+        renderQuickPrompts();
+        showToast('所有数据已清空');
+      }
+    });
+  }
+
+  if (managePromptsBtn) {
+    managePromptsBtn.addEventListener('click', openPromptPanel);
+  }
+}
+
+// ========== 提示词面板 UI 功能 ==========
+function togglePromptPanel() {
+  const panel = document.getElementById('ai-prompt-panel');
+  const isOpen = panel.classList.contains('open');
+  if (isOpen) {
+    panel.classList.remove('open');
+  } else {
+    panel.classList.add('open');
+    renderPromptList();
+  }
+}
+
+function openPromptPanel() {
+  const panel = document.getElementById('ai-prompt-panel');
+  panel.classList.add('open');
+  renderPromptList();
+}
+
+function closePromptPanel() {
+  const panel = document.getElementById('ai-prompt-panel');
+  panel.classList.remove('open');
+}
+
+function renderPromptList() {
+  const builtinList = document.getElementById('ai-prompt-builtin-list');
+  const customList = document.getElementById('ai-prompt-custom-list');
+
+  builtinList.innerHTML = '';
+  customList.innerHTML = '';
+
+  // 渲染内置提示词
+  BUILT_IN_PROMPTS.forEach(prompt => {
+    const item = createPromptListItem(prompt, true);
+    builtinList.appendChild(item);
+  });
+
+  // 渲染自定义提示词
+  promptTemplates.forEach(prompt => {
+    const item = createPromptListItem(prompt, false);
+    customList.appendChild(item);
+  });
+}
+
+function createPromptListItem(prompt, isBuiltIn) {
+  const item = document.createElement('div');
+  item.className = 'ai-prompt-list-item';
+
+  const title = document.createElement('span');
+  title.className = 'ai-prompt-list-title';
+  title.textContent = prompt.title;
+
+  const actions = document.createElement('div');
+  actions.className = 'ai-prompt-list-actions';
+
+  if (!isBuiltIn) {
+    const editBtn = document.createElement('button');
+    editBtn.innerHTML = '✏️';
+    editBtn.title = '编辑';
+    editBtn.onclick = (e) => {
+      e.stopPropagation();
+      editPrompt(prompt.id);
+    };
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.innerHTML = '🗑️';
+    deleteBtn.title = '删除';
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      deletePromptItem(prompt.id);
+    };
+
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+  }
+
+  item.appendChild(title);
+  item.appendChild(actions);
+
+  item.onclick = () => usePromptInInput(prompt.id);
+
+  return item;
+}
+
+function usePromptInInput(promptId) {
+  const prompt = PromptManager.getPromptById(promptId);
+  if (prompt) {
+    inputTextarea.value = prompt.content;
+    inputTextarea.focus();
+    inputTextarea.style.height = 'auto';
+    inputTextarea.style.height = Math.min(inputTextarea.scrollHeight, 120) + 'px';
+    closePromptPanel();
+    showToast('提示词已应用到输入框');
+  }
+}
+
+function deletePromptItem(promptId) {
+  if (confirm('确定要删除这个提示词模板吗？')) {
+    PromptManager.deletePrompt(promptId);
+    renderPromptList();
+    renderQuickPrompts();
+    showToast('提示词已删除');
+  }
+}
+
+function editPrompt(promptId) {
+  const prompt = PromptManager.getPromptById(promptId);
+  if (!prompt) return;
+
+  const modal = document.getElementById('ai-prompt-modal');
+  const titleInput = document.getElementById('ai-prompt-title');
+  const contentInput = document.getElementById('ai-prompt-content');
+  const iconInput = document.getElementById('ai-prompt-icon');
+
+  titleInput.value = prompt.title;
+  contentInput.value = prompt.content;
+  iconInput.value = prompt.icon || '💬';
+
+  modal.dataset.editingId = promptId;
+  modal.classList.add('open');
+}
+
+function setupPromptPanelListeners() {
+  const closeBtn = document.getElementById('ai-prompt-panel-close');
+  const createBtn = document.getElementById('ai-create-prompt');
+  const modal = document.getElementById('ai-prompt-modal');
+  const modalClose = document.getElementById('ai-prompt-modal-close');
+  const modalSave = document.getElementById('ai-prompt-modal-save');
+  const modalCancel = document.getElementById('ai-prompt-modal-cancel');
+
+  if (closeBtn) closeBtn.addEventListener('click', closePromptPanel);
+
+  if (createBtn) {
+    createBtn.addEventListener('click', () => {
+      const modal = document.getElementById('ai-prompt-modal');
+      document.getElementById('ai-prompt-title').value = '';
+      document.getElementById('ai-prompt-content').value = '';
+      document.getElementById('ai-prompt-icon').value = '💬';
+      modal.dataset.editingId = '';
+      modal.classList.add('open');
+    });
+  }
+
+  if (modalClose) modalClose.addEventListener('click', () => modal.classList.remove('open'));
+  if (modalCancel) modalCancel.addEventListener('click', () => modal.classList.remove('open'));
+
+  if (modalSave) {
+    modalSave.addEventListener('click', () => {
+      const title = document.getElementById('ai-prompt-title').value.trim();
+      const content = document.getElementById('ai-prompt-content').value.trim();
+      const icon = document.getElementById('ai-prompt-icon').value.trim() || '💬';
+      const editingId = modal.dataset.editingId;
+
+      if (!title || !content) {
+        showToast('请填写标题和内容');
+        return;
+      }
+
+      if (editingId) {
+        PromptManager.updatePrompt(editingId, title, content, icon);
+      } else {
+        PromptManager.createCustomPrompt(title, content, icon);
+      }
+
+      renderPromptList();
+      renderQuickPrompts();
+      modal.classList.remove('open');
+      showToast(editingId ? '提示词已更新' : '提示词已创建');
+    });
+  }
+}
+
+// ========== 快捷提示词栏 ==========
+function renderQuickPrompts() {
+  const container = document.getElementById('ai-quick-prompts');
+  if (!container) return;
+
+  container.innerHTML = '';
+  const allPrompts = PromptManager.getAllPrompts().slice(0, 6); // 只显示前6个
+
+  allPrompts.forEach(prompt => {
+    const chip = document.createElement('button');
+    chip.className = 'ai-quick-prompt-chip';
+    chip.innerHTML = `${prompt.icon || '💬'} ${prompt.title.replace(/^[💻📝✨🔍🌐🇺🇸🐛📋⚡💡]\s*/, '').substring(0, 4)}`;
+    chip.title = prompt.title;
+    chip.onclick = () => usePromptInInput(prompt.id);
+    container.appendChild(chip);
+  });
+}
+
+function applyQuickPrompt(promptId) {
+  const text = inputTextarea.value.trim();
+  const selectedText = window.getSelection()?.toString() || '';
+  const prompt = PromptManager.getPromptById(promptId);
+
+  if (prompt) {
+    const selection = selectedText || text;
+    const appliedContent = prompt.content.replace(/\{\{selection\}\}/g, selection);
+    inputTextarea.value = appliedContent;
+    inputTextarea.focus();
+    inputTextarea.style.height = 'auto';
+    inputTextarea.style.height = Math.min(inputTextarea.scrollHeight, 120) + 'px';
+  }
 }
 
 function openConfigPanel() {
