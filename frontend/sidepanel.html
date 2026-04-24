@@ -52,10 +52,6 @@
             <div class="ai-input-toolbar">
               <div class="ai-input-left-actions">
                 <button class="ai-prompt-library-btn" id="ai-prompt-library-btn" title="提示词库">📋</button>
-                <label class="ai-think-checkbox" title="启用 Think 模式">
-                  <input type="checkbox" id="ai-enable-think">
-                  <span>Think</span>
-                </label>
               </div>
               <button class="ai-send" id="ai-send">发送</button>
             </div>
@@ -71,13 +67,6 @@
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- 会话操作菜单 -->
-  <div class="ai-session-menu" id="ai-session-menu" style="display: none;">
-    <div class="ai-session-menu-item" data-action="rename">✏️ 重命名</div>
-    <div class="ai-session-menu-item" data-action="duplicate">📋 复制</div>
-    <div class="ai-session-menu-item ai-session-menu-delete" data-action="delete">🗑️ 删除</div>
   </div>
 
   <!-- 预设提示词管理面板 -->
@@ -140,15 +129,6 @@
       <span class="ai-config-close">×</span>
     </div>
     <div class="ai-config-content">
-      <div class="ai-config-item">
-        <label>API Key 状态</label>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <div id="ai-api-key-status" class="config-status status-error">未配置</div>
-          <button class="ai-reload-config-btn" id="ai-reload-config" title="重新加载后端 .env 配置">🔄</button>
-        </div>
-        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">API 配置由后端 .env 文件管理；修改 .env 后点击 🔄 热加载，无需重启后端</small>
-      </div>
-
       <div class="ai-config-section">
         <h3>个人身份配置</h3>
         <small style="color: #888; font-size: 11px; display: block; margin-bottom: 10px;">用于个性化提示和识别与您相关的内容</small>
@@ -178,37 +158,13 @@
       </div>
 
       <div class="ai-config-section">
-        <h3>网页上下文设置</h3>
-      </div>
-
-      <div class="ai-config-item ai-config-checkbox">
-        <label>
-          <input type="checkbox" id="ai-use-context" checked>
-          使用当前网页内容作为上下文
-        </label>
-      </div>
-
-      <div class="ai-config-item">
-        <label>上下文最大长度（字符）</label>
-        <input type="number" class="ai-config-input" id="ai-context-length" min="1000" max="15000" step="1000" value="8000">
-        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">建议：3000-8000字符，过长可能导致请求失败</small>
-      </div>
-
-      <div class="ai-config-item">
-        <label>单次请求最大字符数</label>
-        <input type="number" class="ai-config-input" id="ai-max-total-chars" min="5000" max="50000" step="5000" value="25000">
-        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">包括上下文+历史对话，建议15000-30000</small>
+        <h3>对话设置</h3>
       </div>
 
       <div class="ai-config-item">
         <label>保留对话轮数</label>
         <input type="number" class="ai-config-input" id="ai-max-history-rounds" min="1" max="20" step="1" value="5">
         <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">多轮对话时保留的最近对话轮数</small>
-      </div>
-
-      <div class="ai-config-item">
-        <label>上下文状态</label>
-        <div id="ai-context-status" class="context-status">点击"刷新上下文"查看状态</div>
       </div>
 
       <div class="ai-config-section">
@@ -228,7 +184,6 @@
       <div class="ai-config-actions">
         <button class="ai-config-save">保存</button>
         <button class="ai-config-reset">恢复默认</button>
-        <button class="ai-refresh-context">🔄 刷新上下文</button>
       </div>
     </div>
   </div>

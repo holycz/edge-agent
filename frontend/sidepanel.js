@@ -1,20 +1,59 @@
 const DEFAULT_CONFIG = {
   useContext: true,
-  contextLength: 8000,
   enableDoubleClick: false,
-  maxTotalChars: 25000,
   maxHistoryRounds: 5,
-  myName: "",
-  otherInfo: "",
-  apiKeySet: false,
+  myName: '',
+  otherInfo: '',
+  // 注意：API配置已从后端移除，由后端 .env 统一管理
 };
 
+// ========== 统一接口参数生成工具 ==========
+
+/**
+ * 生成请求流水号：时间戳 + 6位随机数
+ * 格式：1738675432101 + 123456
+ */
+function generateRequestId() {
+  const timestamp = Date.now();
+  const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+  return `${timestamp}${random}`;
+}
+
+/**
+ * 生成对话ID：(yyyyMMddHHmmssSSS) + 6位随机数
+ * 格式：20250204091532123 + 123456
+ */
+function generateDialogId() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const ms = String(now.getMilliseconds()).padStart(3, '0');
+  const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+  return `${year}${month}${day}${hours}${minutes}${seconds}${ms}${random}`;
+}
+
+// ========== 会话与智能体映射管理 ==========
+// 每个会话(dialogId)对应一个智能体类型
+// 默认智能体：'4' (AI问答智能体)
+const AGENT_TYPES = {
+  SUMMARIZE_PAGE: '1',     // 网页总结
+  REWRITE: '2',            // 文本润色
+  PROOFREAD: '3',          // 文本稽核
+  CHAT: '4',               // AI问答（默认）
+  SUMMARIZE_LEADER: '205a099ade6a4c4fb454e11f96ee6a18',  // 公文批示总结
+};
+
+// ========== 智能体配置 ==========
 const FEATURE_PROMPTS = {
-  summarize: { label: '总结', icon: '📝' },
-  rewrite: { label: '润色改写', icon: '✨' },
-  proofread: { label: '稽核检查', icon: '🔍' },
-  summarizePage: { label: '总结该网页', icon: '📄' },
-  summarizeLeaderComments: { label: '总结领导批示', icon: '👔' },
+  summarize: { label: '总结', icon: '📝', agentId: '1' },
+  rewrite: { label: '润色改写', icon: '✨', agentId: '2' },
+  proofread: { label: '稽核检查', icon: '🔍', agentId: '3' },
+  summarizePage: { label: '总结该网页', icon: '📄', agentId: '1' },
+  summarizeLeaderComments: { label: '总结领导批示', icon: '👔', agentId: '205a099ade6a4c4fb454e11f96ee6a18' },
 };
 
 // ========== 内置提示词模板 ==========
@@ -148,19 +187,61 @@ const SessionManager = {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
   },
 
-  createSession(title = '新会话') {
+  createSession(title = '新会话', agentType = AGENT_TYPES.CHAT) {
     const session = {
       id: this.generateId(),
       title: title.substring(0, 50),
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      pageContext: null
+      pageContext: null,
+      dialogId: generateDialogId(),  // 所有会话都有 dialogId，支持连续对话
+      agentType: agentType,  // 该会话初始的智能体类型
     };
+
     sessions.unshift(session);
     currentSessionId = session.id;
     StorageManager.saveSessions();
+
+    console.log('[SessionManager] 创建新会话:', session.id, 'agentType:', agentType, 'dialogId:', session.dialogId);
     return session;
+  },
+
+  /**
+   * 获取当前会话的 dialogId
+   * 所有类型的会话都有自己的 dialogId，支持在对话框内继续对话
+   */
+  getCurrentDialogId() {
+    const session = this.getCurrentSession();
+    if (!session) return generateDialogId();  // 无当前会话时生成新的
+
+    // 确保会话有 dialogId
+    if (!session.dialogId) {
+      session.dialogId = generateDialogId();
+      StorageManager.saveSessions();
+    }
+    return session.dialogId;
+  },
+
+  /**
+   * 获取/设置会话的智能体类型
+   */
+  getSessionAgentType(sessionId = null) {
+    const session = sessionId ? sessions.find(s => s.id === sessionId) : this.getCurrentSession();
+    return session?.agentType || AGENT_TYPES.CHAT;
+  },
+
+  setSessionAgentType(sessionId, agentType) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (session) {
+      session.agentType = agentType;
+      // 确保会话有 dialogId（首次对话时使用，后续对话保持）
+      if (!session.dialogId) {
+        session.dialogId = generateDialogId();
+      }
+      session.updatedAt = Date.now();
+      StorageManager.saveSessions();
+    }
   },
 
   getCurrentSession() {
@@ -173,6 +254,7 @@ const SessionManager = {
       currentSessionId = sessionId;
       conversationHistory = [...session.messages];
       StorageManager.saveSessions();
+      console.log('[SessionManager] 切换会话:', sessionId, 'agentType:', session.agentType, 'dialogId:', session.dialogId);
       return session;
     }
     return null;
@@ -195,6 +277,12 @@ const SessionManager = {
       return true;
     }
     return false;
+  },
+
+  clearAll() {
+    sessions = [];
+    currentSessionId = null;
+    StorageManager.saveSessions();
   },
 
   updateSessionTitle(sessionId, newTitle) {
@@ -232,9 +320,13 @@ const SessionManager = {
       const title = firstMessage.substring(0, 20) + (firstMessage.length > 20 ? '...' : '');
       session.title = title;
       session.updatedAt = Date.now();
+      // 同时设置该会话为AI问答类型
+      if (!session.agentType) {
+        session.agentType = AGENT_TYPES.CHAT;
+      }
       StorageManager.saveSessions();
     }
-  }
+  },
 };
 
 // ========== Prompt Manager - 提示词模板管理 ==========
@@ -324,8 +416,8 @@ async function init() {
         renderConversationHistory();
         console.log("[Sidepanel] 恢复会话:", session.title, "消息数:", session.messages.length);
       } else {
-        // 创建新会话
-        SessionManager.createSession('新会话');
+        // 创建新会话（默认AI问答）
+        SessionManager.createSession('新会话', AGENT_TYPES.CHAT);
         renderSessionList();
       }
     } else {
@@ -368,7 +460,11 @@ async function checkPendingQuestion() {
 
       await chrome.storage.session.remove(['pendingQuestion', 'pendingAction', 'pendingSelectedText']);
 
-      console.log("[Sidepanel] 处理待处理问题:", question, "动作:", action);
+      console.log("[Sidepanel] 处理待处理问题，action:", action);
+      console.log("[Sidepanel] 问题长度:", question?.length || 0, "字符");
+      if (selectedText) {
+        console.log("[Sidepanel] 选中文本长度:", selectedText.length, "字符:", selectedText.substring(0, 100) + (selectedText.length > 100 ? "..." : ""));
+      }
 
       if (action === 'ask') {
         if (selectedText) {
@@ -386,41 +482,17 @@ async function checkPendingQuestion() {
         const feature = FEATURE_PROMPTS[action];
         if (feature) {
           const shortText = selectedText.substring(0, 20) + (selectedText.length > 20 ? '...' : '');
+          
+          // 创建新会话用于这个操作
+          const newSession = SessionManager.createSession(feature.label, feature.agentId);
+          
           addMessage('user', `${feature.icon} ${feature.label}：「${shortText}」`);
-
-          let pageContext = null;
-          if (config.useContext) {
-            pageContext = await getCurrentPageContext();
-          }
-
-          const backendUrl = await getBackendUrl();
-          try {
-            const promptRes = await fetch(`${backendUrl}/api/build-prompt`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: action,
-                selected_text: selectedText,
-                page_content: pageContext?.content || "",
-                page_metadata: pageContext?.metadata || {},
-                conversation_history: conversationHistory,
-                max_total_chars: config.maxTotalChars,
-                max_history_rounds: Math.min(3, config.maxHistoryRounds),
-              }),
-            });
-            const promptData = await promptRes.json();
-
-            if (promptData.error) {
-              addMessage('bot', promptData.error);
-              return;
-            }
-
-            conversationHistory.push({ role: 'user', content: `${feature.icon} ${feature.label}：「${shortText}」` });
-            SessionManager.saveCurrentSessionMessages();
-            await askAI(promptData.messages, promptData.enable_thinking);
-          } catch (e) {
-            addMessage('bot', '后端连接失败: ' + e.message);
-          }
+          conversationHistory.push({ role: 'user', content: `${feature.icon} ${feature.label}：「${shortText}」` });
+          SessionManager.saveCurrentSessionMessages();
+          renderSessionList();
+          
+          // 调用智能体，传递 dialogId 以支持在该对话框中继续对话
+          await callAgent(feature.agentId, selectedText, false, {}, newSession.dialogId, false);
         }
       }
     }
@@ -438,9 +510,8 @@ async function handlePageSummary(action) {
     return;
   }
 
-  addMessage('user', `${feature.icon} ${feature.label}`);
-
   updateContextStatus('正在获取网页内容...');
+  console.log('[Sidepanel] 处理页面总结功能:', action);
   const pageContext = await getCurrentPageContext(true);
 
   if (!pageContext || !pageContext.content) {
@@ -448,47 +519,40 @@ async function handlePageSummary(action) {
     return;
   }
 
+  console.log('[Sidepanel] 成功获取页面内容，长度:', pageContext.content.length, '字符，元信息:', pageContext.metadata);
   updateContextStatus('正在分析...');
 
-  if (action === 'summarizeLeaderComments') {
-    await loadConfig();
-    if (!config.myName && !config.otherInfo) {
-      addMessage('bot', '请先在后端配置个人身份信息（.env 中的 MY_NAME / OTHER_INFO），以便准确识别相关批示。');
-      return;
-    }
-  }
+  // 创建专用会话（非AI问答）- 先清空界面再创建新会话
+  const agentType = action === 'summarizeLeaderComments' ? AGENT_TYPES.SUMMARIZE_LEADER : AGENT_TYPES.SUMMARIZE_PAGE;
 
+  // 清空当前消息界面
+  messagesContainer.innerHTML = '';
+  conversationHistory = [];
+
+  // 创建新会话
+  const newSession = SessionManager.createSession(feature.label, agentType);
+  
+  // 保存页面上下文到会话中，供后续对话使用
+  newSession.pageContext = pageContext;
+  SessionManager.saveCurrentSessionMessages();
+  renderSessionList();
+
+  // 领导批示总结的配置检查由后端完成，前端不再预检查
+  // 后端会根据 .env 中的 MY_NAME 和 OTHER_INFO 注入到提示词中
+
+  // 添加用户消息到新会话
+  addMessage('user', `${feature.icon} ${feature.label}`);
   conversationHistory.push({
     role: 'user',
     content: `${feature.icon} ${feature.label}`
   });
   SessionManager.saveCurrentSessionMessages();
 
-  const backendUrl = await getBackendUrl();
-  try {
-    const promptRes = await fetch(`${backendUrl}/api/build-prompt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: action,
-        page_content: pageContext.content,
-        page_metadata: pageContext.metadata || {},
-        conversation_history: conversationHistory,
-        max_total_chars: config.maxTotalChars,
-        max_history_rounds: Math.min(3, config.maxHistoryRounds),
-      }),
-    });
-    const promptData = await promptRes.json();
-
-    if (promptData.error) {
-      addMessage('bot', promptData.error);
-      return;
-    }
-
-    await askAI(promptData.messages, promptData.enable_thinking);
-  } catch (e) {
-    addMessage('bot', '后端连接失败: ' + e.message);
-  }
+  // 调用智能体接口，传递 pageMetadata 用于首次对话
+  // 注意：这里的 dialogId 是新生成的，后续在同一对话框中的对话会复用它
+  await callAgent(feature.agentId, pageContext.content, false, {
+    ...pageContext?.metadata,
+  }, newSession.dialogId, false);
 
   const statusText = buildContextStatusText(pageContext);
   updateContextStatus(statusText);
@@ -522,46 +586,64 @@ function initMarkdownParser() {
   }
 }
 
+// ========== 配置管理（已移除后端配置接口，仅使用本地存储） ==========
+
 async function loadConfig() {
   try {
-    const backendUrl = await getBackendUrl();
-    const res = await fetch(`${backendUrl}/api/config`);
-    if (res.ok) {
-      const backendConfig = await res.json();
-      const mapped = {
-        useContext: backendConfig.use_context,
-        contextLength: backendConfig.context_length,
-        maxTotalChars: backendConfig.max_total_chars,
-        maxHistoryRounds: backendConfig.max_history_rounds,
-        myName: backendConfig.my_name,
-        otherInfo: backendConfig.other_info,
-        apiKeySet: backendConfig.api_key_set,
-      };
-      config = { ...DEFAULT_CONFIG, ...mapped };
-      console.log("[Sidepanel] 从后端加载配置成功，apiKeySet:", config.apiKeySet);
-    } else {
-      console.log("[Sidepanel] 后端配置加载失败，使用默认配置");
-    }
+    // 从本地存储加载配置
+    const stored = await chrome.storage.sync.get([
+      'useContext', 'contextLength', 'enableDoubleClick',
+      'maxTotalChars', 'maxHistoryRounds', 'myName', 'otherInfo'
+    ]);
+
+    config = {
+      ...DEFAULT_CONFIG,
+      useContext: stored.useContext ?? DEFAULT_CONFIG.useContext,
+      contextLength: stored.contextLength ?? DEFAULT_CONFIG.contextLength,
+      maxTotalChars: stored.maxTotalChars ?? DEFAULT_CONFIG.maxTotalChars,
+      maxHistoryRounds: stored.maxHistoryRounds ?? DEFAULT_CONFIG.maxHistoryRounds,
+      myName: stored.myName ?? DEFAULT_CONFIG.myName,
+      otherInfo: stored.otherInfo ?? DEFAULT_CONFIG.otherInfo,
+      enableDoubleClick: stored.enableDoubleClick ?? DEFAULT_CONFIG.enableDoubleClick,
+    };
+
+    console.log("[Sidepanel] 配置已从本地存储加载");
   } catch (e) {
-    console.log("[Sidepanel] 后端未连接，使用默认配置:", e.message);
+    console.log("[Sidepanel] 从本地存储加载配置失败，使用默认配置:", e.message);
+  }
+}
+
+/**
+ * 检查后端服务状态
+ * @returns {Promise<{available: boolean, message: string}>}
+ */
+async function checkBackendStatus() {
+  try {
+    const backendUrl = await getBackendUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(`${backendUrl}/api/health`, { 
+      method: 'GET',
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (response.ok) {
+      return { available: true, message: '后端服务正常' };
+    }
+    return { available: false, message: '后端服务响应异常' };
+  } catch (e) {
+    console.log('[Sidepanel] 后端状态检查失败:', e.message);
+    return { available: false, message: '无法连接到后端服务，请确认后端已启动' };
   }
 }
 
 async function saveConfig(newConfig) {
   try {
     config = { ...config, ...newConfig };
-    const backendUrl = await getBackendUrl();
-    const res = await fetch(`${backendUrl}/api/config`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newConfig),
-    });
-    if (res.ok) {
-      console.log("[Sidepanel] 配置已保存到后端");
-      return true;
-    }
-    console.error("[Sidepanel] 保存配置到后端失败:", res.status);
-    return false;
+    // 保存到本地存储
+    await chrome.storage.sync.set(newConfig);
+    console.log("[Sidepanel] 配置已保存到本地存储");
+    return true;
   } catch (e) {
     console.error("[Sidepanel] 保存配置失败:", e);
     return false;
@@ -594,21 +676,17 @@ function setupEventListeners() {
   document.querySelector('.ai-config-close').addEventListener('click', closeConfigPanel);
 
   document.querySelector('.ai-config-save').addEventListener('click', async () => {
-    const contextLengthInput = parseInt(document.getElementById('ai-context-length').value);
-    const maxTotalCharsInput = parseInt(document.getElementById('ai-max-total-chars').value);
     const maxHistoryRoundsInput = parseInt(document.getElementById('ai-max-history-rounds').value);
+    const myName = document.getElementById('ai-my-name').value.trim();
+    const otherInfo = document.getElementById('ai-other-info').value.trim();
+    const enableDoubleClick = document.getElementById('ai-enable-double-click').checked;
 
     const newConfig = {
-      use_context: document.getElementById('ai-use-context').checked,
-      context_length: contextLengthInput >= 1000 && contextLengthInput <= 15000 ? contextLengthInput : DEFAULT_CONFIG.contextLength,
-      max_total_chars: maxTotalCharsInput >= 5000 ? maxTotalCharsInput : DEFAULT_CONFIG.maxTotalChars,
-      max_history_rounds: maxHistoryRoundsInput >= 1 && maxHistoryRoundsInput <= 20 ? maxHistoryRoundsInput : DEFAULT_CONFIG.maxHistoryRounds,
-      my_name: document.getElementById('ai-my-name').value.trim(),
-      other_info: document.getElementById('ai-other-info').value.trim(),
+      maxHistoryRounds: maxHistoryRoundsInput >= 1 && maxHistoryRoundsInput <= 20 ? maxHistoryRoundsInput : DEFAULT_CONFIG.maxHistoryRounds,
+      myName: myName,
+      otherInfo: otherInfo,
+      enableDoubleClick: enableDoubleClick,
     };
-
-    const enableDoubleClick = document.getElementById('ai-enable-double-click').checked;
-    await chrome.storage.sync.set({ enableDoubleClick });
 
     if (await saveConfig(newConfig)) {
       config = { ...config, ...newConfig };
@@ -616,7 +694,7 @@ function setupEventListeners() {
       showToast('配置已保存');
       closeConfigPanel();
     } else {
-      showToast('配置保存失败，请检查后端连接');
+      showToast('配置保存失败');
     }
   });
 
@@ -627,24 +705,6 @@ function setupEventListeners() {
       showToast('已恢复默认配置');
     }
   });
-
-  document.querySelector('.ai-refresh-context').addEventListener('click', async () => {
-    await handleRefreshContext();
-  });
-
-  const miniRefreshBtn = document.querySelector('.ai-refresh-context-mini');
-  if (miniRefreshBtn) {
-    miniRefreshBtn.addEventListener('click', async () => {
-      await handleRefreshContext();
-    });
-  }
-
-  const reloadConfigBtn = document.getElementById('ai-reload-config');
-  if (reloadConfigBtn) {
-    reloadConfigBtn.addEventListener('click', async () => {
-      await handleReloadConfig();
-    });
-  }
 }
 
 async function sendMessage() {
@@ -655,50 +715,49 @@ async function sendMessage() {
   inputTextarea.style.height = 'auto';
 
   addMessage('user', text);
+  console.log('[Sidepanel] 发送用户消息，长度:', text.length, '字符:', text.substring(0, 100) + (text.length > 100 ? "..." : ""));
 
+  // 获取当前会话
+  const currentSession = SessionManager.getCurrentSession();
+  const dialogId = SessionManager.getCurrentDialogId();
+  
+  // 判断是否是首次对话（还没有AI回复消息）
+  const isFirstMessage = currentSession && !currentSession.messages.some(m => m.role === 'assistant');
+  
+  // 获取绑定的智能体 - 对话与智能体从创建时就绑定，不随用户后续输入改变
+  const agentId = currentSession?.agentType || AGENT_TYPES.CHAT;
+  const isQA = agentId === AGENT_TYPES.CHAT;
+  
+  console.log('[Sidepanel] sendMessage 判断:', {
+    isFirstMessage,
+    agentType: currentSession?.agentType,
+    agentId,
+    messageCount: currentSession?.messages?.length,
+    hasAssistantMsg: currentSession?.messages?.some(m => m.role === 'assistant')
+  });
+
+  // 仅AI问答智能体在首次对话时获取页面上下文
+  // 其他专用智能体（领导批示等）在对话框创建时已经确定上下文
   let pageContext = null;
-  if (config.useContext) {
+  if (isQA && isFirstMessage && config.useContext) {
     pageContext = await getCurrentPageContext();
   }
 
-  const backendUrl = await getBackendUrl();
-  const enableThinkCheckbox = document.getElementById('ai-enable-think');
-  const enableThinking = enableThinkCheckbox ? enableThinkCheckbox.checked : false;
+  // 保存用户消息
+  conversationHistory.push({ role: 'user', content: text });
+  SessionManager.saveCurrentSessionMessages();
 
-  try {
-    const promptRes = await fetch(`${backendUrl}/api/build-prompt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        question: text,
-        page_content: pageContext?.content || "",
-        page_metadata: pageContext?.metadata || {},
-        conversation_history: conversationHistory,
-        max_total_chars: config.maxTotalChars,
-        max_history_rounds: config.maxHistoryRounds,
-        enable_thinking: enableThinking,
-      }),
-    });
-    const promptData = await promptRes.json();
-
-    if (promptData.error) {
-      addMessage('bot', promptData.error);
-      return;
-    }
-
-    conversationHistory.push({ role: 'user', content: text });
-    SessionManager.saveCurrentSessionMessages();
-
-    const currentSession = SessionManager.getCurrentSession();
-    if (currentSession && currentSession.messages.length <= 2) {
-      SessionManager.autoGenerateTitle(currentSession.id, text);
-      renderSessionList();
-    }
-
-    await askAI(promptData.messages, promptData.enable_thinking);
-  } catch (e) {
-    addMessage('bot', '后端连接失败: ' + e.message);
+  // 自动生成标题（仅在首次对话时）
+  if (currentSession && isFirstMessage) {
+    SessionManager.autoGenerateTitle(currentSession.id, text);
+    renderSessionList();
   }
+
+  // 调用智能体 - 始终使用会话绑定的智能体
+  await callAgent(agentId, pageContext?.content || "", isQA, {
+    ...pageContext?.metadata,
+    userQuestion: text
+  }, dialogId, false, !isFirstMessage);
 }
 
 function addMessage(role, text) {
@@ -820,13 +879,15 @@ async function getCurrentPageContext(forceRefresh = false) {
   }
 
   if (!forceRefresh && pageContextCache) {
-    console.log("[Sidepanel] 使用缓存的网页上下文");
+    console.log("[Sidepanel] 使用缓存的网页上下文，长度:", pageContextCache.content?.length || 0, "字符");
     return pageContextCache;
   }
 
+  console.log('[Sidepanel] 开始获取当前页面上下文...');
+
   try {
     const lastFocusedWindow = await chrome.windows.getLastFocused({ populate: true });
-    console.log("[Sidepanel] 最后聚焦窗口ID:", lastFocusedWindow.id);
+    console.log("[Sidepanel] 获取到最后聚焦窗口ID:", lastFocusedWindow.id);
 
     const activeTab = lastFocusedWindow.tabs?.find(tab => tab.active);
 
@@ -835,7 +896,7 @@ async function getCurrentPageContext(forceRefresh = false) {
       return null;
     }
 
-    console.log("[Sidepanel] 当前标签页:", activeTab.url);
+    console.log("[Sidepanel] 当前标签页 URL:", activeTab.url, "标题:", activeTab.title);
 
     const excludedPatterns = [
       'chrome://', 'chrome-extension://', 'edge://', 'file://', 'about:', 'data:'
@@ -868,17 +929,15 @@ async function getCurrentPageContext(forceRefresh = false) {
 
     if (response && response.content) {
       let content = response.content;
-      console.log("[Sidepanel] 原始内容长度:", content.length, "限制:", config.contextLength);
-      if (content.length > config.contextLength) {
-        content = content.substring(0, config.contextLength) + '\n...(内容已截断)';
-      }
+      console.log("[Sidepanel] 从 content.js 获取到原始内容，长度:", content.length, "字符");
+      console.log("[Sidepanel] 页面元信息:", response.metadata);
 
       pageContextCache = {
         content: content,
         metadata: response.metadata || {}
       };
 
-      console.log("[Sidepanel] 获取到网页上下文，长度:", content.length);
+      console.log("[Sidepanel] 页面上下文缓存成功，内容长度:", content.length, "字符");
       return pageContextCache;
     } else {
       console.log("[Sidepanel] 响应为空或没有内容", response);
@@ -932,7 +991,7 @@ async function getPageCookies() {
         url: response.url || "",
         domain: response.domain || ""
       };
-      console.log("[Sidepanel] 获取到页面存储数据，cookies长度:", pageCookiesCache.cookies.length);
+      console.log("[Sidepanel] 获取到页面存储数据，cookies长度:", pageCookiesCache.cookies.length, "localStorage 条目:", Object.keys(pageCookiesCache.localStorage).length, "sessionStorage 条目:", Object.keys(pageCookiesCache.sessionStorage).length);
       return pageCookiesCache;
     }
   } catch (e) {
@@ -943,8 +1002,10 @@ async function getPageCookies() {
 
 async function refreshContextStatus() {
   updateContextStatus('正在获取上下文...');
+  console.log('[Sidepanel] 刷新上下文状态...');
   const context = await getCurrentPageContext(true);
   if (context) {
+    console.log('[Sidepanel] 上下文刷新成功，总长度:', context.content?.length || 0, '字符');
     const statusText = buildContextStatusText(context);
     updateContextStatus(statusText);
     console.log("[Sidepanel] 状态栏已更新:", statusText);
@@ -1014,17 +1075,29 @@ function updateContextStatus(status) {
   }
 }
 
-async function askAI(messages, enableThinking = false) {
+// ========== 智能体调用函数 ==========
+
+// 调用智能体接口（统一接口格式）
+// 参数说明：
+// - agentId: 智能体ID ('1', '2', '3', '4', '205a099ade6a4c4fb454e11f96ee6a18')
+// - content: 用户输入内容，会作为 keyword 字段发送
+// - isQA: 是否为AI问答模式（智能体4）
+// - pageMetadata: 页面元信息（仅在AI问答模式下使用，用于构建页面上下文）
+// - dialogId: 对话ID（可选，复用当前会话的dialogId）
+// - enableThinking: 是否启用思考模式（默认false）
+  // - isContinuation: 是否为继续对话（true=后续对话，只发用户问题；false=首次对话，发页面上下文）
+async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dialogId = null, enableThinking = false, isContinuation = false) {
   await loadConfig();
 
-  console.log("[Sidepanel] askAI 被调用，消息数:", messages.length, "apiKeySet:", config.apiKeySet);
-
-  if (!config.apiKeySet) {
-    addMessage('bot', '后端 API Key 未配置，请在后端 .env 文件中设置 API_KEY');
+  // 检查后端服务状态
+  const backendStatus = await checkBackendStatus();
+  if (!backendStatus.available) {
+    addMessage('bot', `后端服务不可用：${backendStatus.message}`);
     openConfigPanel();
     return;
   }
 
+  // 重置状态
   currentBotBubble = null;
   currentThinkBubble = null;
   currentThinkContainer = null;
@@ -1037,21 +1110,96 @@ async function askAI(messages, enableThinking = false) {
   currentStreamSessionId = 'stream_' + Date.now();
   updateSendButtonState();
 
-  const pageCookies = await getPageCookies();
+  // 生成统一接口参数
+  const requestId = generateRequestId();
+  // 使用传入的 dialogId，或从当前会话获取，或生成新的
+  const currentDialogId = dialogId || SessionManager.getCurrentDialogId();
+  
+  // 对话与智能体从创建时就绑定，不再根据 isContinuation 切换智能体
+  // isContinuation 仅用于确定是否是首次对话（影响 keyword 构建方式）
+  const actualAgentId = agentId;
+
+  console.log('[Sidepanel] 智能体调用参数:', {
+    agentId: actualAgentId,
+    isContinuation,
+    isFirstMessage: !isContinuation,
+    requestId,
+    dialogId: currentDialogId,
+    isQA,
+    contentPreview: content.substring(0, 100) + (content.length > 100 ? '...' : '')
+  });
+
+  // 构建请求体 - 所有智能体统一使用 AgentRequest 格式，只发送 keyword
+  let keyword;
+  const userQuestion = pageMetadata.userQuestion || '';
+  
+  if (isContinuation) {
+    // 后续对话（所有智能体）：只发送用户新问题
+    // 后端会根据 dialogId 自动关联历史对话，无需重复发送页面上下文
+    keyword = `用户问题: ${userQuestion}`;
+  } else if (isQA) {
+    // AI问答智能体首次对话：构建包含页面上下文和用户问题的 keyword
+    let contextHeader = "";
+    if (pageMetadata.title) {
+      contextHeader += `页面标题: ${pageMetadata.title}\n`;
+    }
+    if (pageMetadata.url) {
+      contextHeader += `页面地址: ${pageMetadata.url}\n`;
+    }
+    // 格式化的 keyword，后端会解析出页面上下文保存
+    keyword = `--- 页面上下文 ---\n${contextHeader}${content}\n--- 页面上下文结束 ---\n\n用户问题: ${userQuestion}`;
+  } else {
+    // 其他智能体（领导批示、页面总结等）首次对话：直接把 content 作为 keyword
+    // 页面内容已经包含在 content 中
+    keyword = content;
+  }
+
+  // 统一请求格式，只发送 keyword，不发送 messages
+  // 对于领导批示总结智能体的首次对话，将个人信息附加到 keyword 中
+  // 后续对话由后端根据 dialogId 关联历史，无需重复传递个人信息
+  if (agentId === AGENT_TYPES.SUMMARIZE_LEADER && !isContinuation) {
+    const personalInfo = [];
+    if (config.myName) personalInfo.push(`我的姓名是${config.myName}`);
+    if (config.otherInfo) personalInfo.push(config.otherInfo);
+    console.log('[Sidepanel] 领导批示智能体 - 当前配置:', {
+      myName: config.myName || '(未设置)',
+      otherInfo: config.otherInfo || '(未设置)',
+      personalInfoLength: personalInfo.length,
+      personalInfoContent: personalInfo
+    });
+    if (personalInfo.length > 0) {
+      // 更清晰的格式，让AI能明确识别用户身份
+      const infoPrefix = `【我的身份信息】\n${personalInfo.join('。\n')}\n\n【OA审批页面内容】\n`;
+      keyword = infoPrefix + keyword;
+      console.log('[Sidepanel] 已添加个人信息到 keyword，最终keyword前200字符:', keyword.substring(0, 200));
+    }
+  }
 
   const requestBody = {
-    messages: messages,
+    requestId,
+    dialogId: currentDialogId,
+    keyword: keyword,  // 包含页面上下文（首次）和用户问题，或附加个人信息
     stream: true,
     enable_thinking: enableThinking,
-    page_cookies: pageCookies || {},
+    page_cookies: {},
   };
 
+  console.log('[Sidepanel] 调用智能体:', actualAgentId, 'sessionId:', currentStreamSessionId, 'dialogId:', currentDialogId);
+  console.log('[Sidepanel] keyword 长度:', keyword.length, '字符');
+
   try {
+    const requestBodyJson = JSON.stringify(requestBody);
     chrome.runtime.sendMessage({
       type: 'API_STREAM_REQUEST',
-      body: JSON.stringify(requestBody),
+      endpoint: `/sxzypt/scene_gateway/agent/open/${actualAgentId}`,
+      body: requestBodyJson,
       sessionId: currentStreamSessionId,
+      dialogId: currentDialogId,
     });
+    console.log('[Sidepanel] 智能体请求已发送，等待响应...');
+
+    // 返回 dialogId，方便后续复用
+    return currentDialogId;
   } catch (e) {
     if (currentBotBubble) {
       currentBotBubble.innerHTML = '出错：' + e.message;
@@ -1059,6 +1207,7 @@ async function askAI(messages, enableThinking = false) {
     currentBotBubble = null;
     isStreaming = false;
     updateSendButtonState();
+    throw e;
   }
 }
 
@@ -1246,11 +1395,11 @@ function clearMessages() {
   messagesContainer.innerHTML = '';
   clearContextCache();
   conversationHistory = [];
-  // 创建新会话
-  SessionManager.createSession('新会话');
+  // 创建新会话（默认是AI问答智能体）
+  SessionManager.createSession('新会话', AGENT_TYPES.CHAT);
   renderSessionList();
-  console.log("[Sidepanel] 已创建新会话");
-  showToast('已新建对话');
+  console.log("[Sidepanel] 已创建新AI问答会话");
+  showToast('已新建AI问答对话');
 }
 
 // ========== 会话面板 UI 功能 ==========
@@ -1277,10 +1426,17 @@ function renderSessionList() {
     item.className = 'ai-session-item' + (session.id === currentSessionId ? ' active' : '');
     item.dataset.id = session.id;
 
+    // 根据智能体类型显示不同的图标
+    let agentIcon = '💬';  // 默认AI问答
+    if (session.agentType === AGENT_TYPES.SUMMARIZE_PAGE) agentIcon = '📄';
+    else if (session.agentType === AGENT_TYPES.SUMMARIZE_LEADER) agentIcon = '👔';
+    else if (session.agentType === AGENT_TYPES.REWRITE) agentIcon = '✨';
+    else if (session.agentType === AGENT_TYPES.PROOFREAD) agentIcon = '🔍';
+
     const title = document.createElement('div');
     title.className = 'ai-session-item-title';
-    title.textContent = session.title || '新会话';
-    title.title = session.title || '新会话';
+    title.textContent = `${agentIcon} ${session.title || '新会话'}`;
+    title.title = `${session.title || '新会话'} [${agentIcon} ${session.agentType === AGENT_TYPES.CHAT ? 'AI问答' : '其他'}]`;
 
     const actions = document.createElement('div');
     actions.className = 'ai-session-item-actions';
@@ -1395,7 +1551,8 @@ function setupSessionPanelListeners() {
         await StorageManager.clearAllData();
         messagesContainer.innerHTML = '';
         conversationHistory = [];
-        SessionManager.createSession('新会话');
+        SessionManager.clearAll();
+        SessionManager.createSession('新会话', AGENT_TYPES.CHAT);
         renderSessionList();
         renderQuickPrompts();
         showToast('所有数据已清空');
@@ -1586,6 +1743,7 @@ function renderQuickPrompts() {
 
   container.innerHTML = '';
   const allPrompts = PromptManager.getAllPrompts().slice(0, 6); // 只显示前6个
+  console.log('[Sidepanel] 渲染快捷提示词栏，共', allPrompts.length, '个提示词');
 
   allPrompts.forEach(prompt => {
     const chip = document.createElement('button');
@@ -1595,21 +1753,6 @@ function renderQuickPrompts() {
     chip.onclick = () => usePromptInInput(prompt.id);
     container.appendChild(chip);
   });
-}
-
-function applyQuickPrompt(promptId) {
-  const text = inputTextarea.value.trim();
-  const selectedText = window.getSelection()?.toString() || '';
-  const prompt = PromptManager.getPromptById(promptId);
-
-  if (prompt) {
-    const selection = selectedText || text;
-    const appliedContent = prompt.content.replace(/\{\{selection\}\}/g, selection);
-    inputTextarea.value = appliedContent;
-    inputTextarea.focus();
-    inputTextarea.style.height = 'auto';
-    inputTextarea.style.height = Math.min(inputTextarea.scrollHeight, 120) + 'px';
-  }
 }
 
 function openConfigPanel() {
@@ -1624,30 +1767,9 @@ function closeConfigPanel() {
 function refreshConfigPanel() {
   console.log("[Sidepanel] 刷新设置面板，当前 config:", config);
 
-  const apiKeyStatusEl = document.getElementById('ai-api-key-status');
-  if (apiKeyStatusEl) {
-    apiKeyStatusEl.textContent = config.apiKeySet ? '已配置 ✓' : '未配置 ✗';
-    apiKeyStatusEl.className = 'config-status ' + (config.apiKeySet ? 'status-ok' : 'status-error');
-  }
-
-  const useContextEl = document.getElementById('ai-use-context');
-  if (useContextEl) {
-    useContextEl.checked = config.useContext !== false;
-  }
-
-  const contextLengthEl = document.getElementById('ai-context-length');
-  if (contextLengthEl) {
-    contextLengthEl.value = config.contextLength || DEFAULT_CONFIG.contextLength;
-  }
-
   const enableDoubleClickEl = document.getElementById('ai-enable-double-click');
   if (enableDoubleClickEl) {
     enableDoubleClickEl.checked = config.enableDoubleClick === true;
-  }
-
-  const maxTotalCharsEl = document.getElementById('ai-max-total-chars');
-  if (maxTotalCharsEl) {
-    maxTotalCharsEl.value = config.maxTotalChars || DEFAULT_CONFIG.maxTotalChars;
   }
 
   const maxHistoryRoundsEl = document.getElementById('ai-max-history-rounds');
@@ -1677,20 +1799,10 @@ function showToast(message) {
 }
 
 async function handleReloadConfig() {
-  try {
-    const backendUrl = await getBackendUrl();
-    const res = await fetch(`${backendUrl}/api/config/reload`, { method: "POST" });
-    if (res.ok) {
-      const data = await res.json();
-      await loadConfig();
-      refreshConfigPanel();
-      showToast(data.ok ? '配置已热加载' : '热加载失败');
-    } else {
-      showToast('热加载失败，请检查后端连接');
-    }
-  } catch (e) {
-    showToast('热加载失败: ' + e.message);
-  }
+  // 配置热加载功能已移除，仅重新加载本地配置
+  await loadConfig();
+  refreshConfigPanel();
+  showToast('配置已重新加载');
 }
 
 async function handleRefreshContext() {

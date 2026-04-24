@@ -12,7 +12,11 @@ function getSelectedText() {
   try {
     const selection = window.getSelection();
     if (!selection) return '';
-    return selection.toString().trim();
+    const selectedText = selection.toString().trim();
+    if (selectedText) {
+      console.log('[Content] 获取选中文本:', selectedText.length, '字符:', selectedText.substring(0, 100) + (selectedText.length > 100 ? '...' : ''));
+    }
+    return selectedText;
   } catch (e) {
     console.error("[Content] 获取选中文本失败:", e.message);
     return '';
@@ -23,7 +27,6 @@ function getSelectedText() {
 function isVisible(element) {
   if (!element) return false;
 
-  // 检查 hidden 属性
   if (element.hasAttribute('hidden') || element.hidden) return false;
 
   const style = window.getComputedStyle(element);
@@ -33,11 +36,8 @@ function isVisible(element) {
     return false;
   }
 
-  // 检查元素是否在视口内（对于 fixed/sticky 元素）
   const rect = element.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) {
-    // 元素没有尺寸，但可能是 visibility: hidden 或者有子元素
-    // 如果 overflow 被裁剪，也可能是不可见的
     const hasVisibleChildren = element.children.length > 0 &&
       Array.from(element.children).some(child => isVisible(child));
     if (!hasVisibleChildren) {
@@ -65,9 +65,7 @@ function hasTabStructure(element) {
       if (element.querySelector(selector)) {
         return true;
       }
-    } catch (e) {
-      // 忽略无效选择器
-    }
+    } catch (e) {}
   }
   return false;
 }
@@ -77,60 +75,39 @@ function extractShadowDOMContent(element, collectedContent = []) {
   if (!element) return;
 
   try {
-    // 检查元素是否有 Shadow Root
     if (element.shadowRoot) {
       const shadowContent = element.shadowRoot.textContent?.trim();
       if (shadowContent && shadowContent.length > 10) {
-        // 激进过滤：去除所有 CSS 相关的内容
         let filteredContent = shadowContent;
-
-        // 移除 CSS 变量定义 (--xxx: value;)
         filteredContent = filteredContent.replace(/--[a-z0-9-]+:\s*[^;]+;/gi, '');
-
-        // 移除 CSS 类定义 (.class { ... })
         filteredContent = filteredContent.replace(/\.[a-z0-9_-]+\s*\{[^}]*\}/gi, '');
-
-        // 移除 body 标签定义 (body{...})
         filteredContent = filteredContent.replace(/body\s*\{[^}]*\}/gi, '');
-
-        // 移除颜色值定义 (rgba(var(--xxx),1))
         filteredContent = filteredContent.replace(/rgba\(var\([^)]+\),[^)]+\)/gi, '');
-
-        // 移除 hex 颜色值 (#16161a)
         filteredContent = filteredContent.replace(/#[a-f0-9]{6}/gi, '');
-
-        // 移除连续的数字和逗号
         filteredContent = filteredContent.replace(/[\d,\s;]{10,}/g, ' ');
-
-        // 清理多余空白
         filteredContent = filteredContent.replace(/\s+/g, ' ').trim();
 
-        // 检查过滤后是否仍有有效内容（至少包含一些中文字符或有意义的单词）
         const hasChinese = /[\u4e00-\u9fa5]/.test(filteredContent);
         const hasWords = /\b[a-z]{4,}\b/i.test(filteredContent);
         const hasSentences = filteredContent.split(/[.!?。！？]\s*/).filter(s => s.trim().length > 10).length > 0;
 
         if ((hasChinese || (hasWords && hasSentences)) && filteredContent.length > 50) {
-          collectedContent.push(`[Shadow DOM内容]: ${filteredContent.substring(0, 5000)}`);
-        } else {
-          console.log("[Content] Shadow DOM 内容被过滤（主要是样式信息）");
+          collectedContent.push(`[Shadow DOM内容]: ${filteredContent}`);
+          console.log('[Content] 提取 Shadow DOM 内容:', filteredContent.length, '字符:', filteredContent.substring(0, 100) + (filteredContent.length > 100 ? '...' : ''));
         }
       }
 
-      // 递归检查 Shadow DOM 中的子元素
       element.shadowRoot.querySelectorAll('*').forEach(child => {
         extractShadowDOMContent(child, collectedContent);
       });
     }
 
-    // 递归检查普通子元素
     element.querySelectorAll('*').forEach(child => {
       if (child.shadowRoot) {
         extractShadowDOMContent(child, collectedContent);
       }
     });
   } catch (e) {
-    // 忽略 Shadow DOM 访问错误
     console.warn('[Content] 访问 Shadow DOM 失败:', e.message);
   }
 
@@ -143,22 +120,20 @@ function extractIframeContent(collectedContent = []) {
 
   iframes.forEach(iframe => {
     try {
-      // 检查 iframe 是否可见
       if (!isVisible(iframe)) return;
 
-      // 尝试访问 iframe 内容
       const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
       if (iframeDoc) {
         const iframeBody = iframeDoc.body;
         if (iframeBody) {
-          const content = iframeBody.innerText?.trim();
-          if (content && content.length > 50) {
-            collectedContent.push(`[iframe内容]: ${content.substring(0, 2000)}...`);
-          }
+        const content = iframeBody.innerText?.trim();
+        if (content && content.length > 50) {
+          collectedContent.push(`[iframe内容]: ${content}`);
+          console.log('[Content] 提取 iframe 内容:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
+        }
         }
       }
     } catch (e) {
-      // 跨域 iframe 无法访问，忽略
       console.log('[Content] 无法访问 iframe (可能是跨域):', e.message);
     }
   });
@@ -168,143 +143,96 @@ function extractIframeContent(collectedContent = []) {
 
 // OA系统审批意见相关选择器
 const APPROVAL_COMMENT_SELECTORS = [
-  // 泛微 OA
   '.wf-reqcomments-detail', '.req-comments-detail',
   '[class*="comment"][class*="detail"]', '[class*="approval"][class*="comment"]',
   '.sign-input-content', '.sign-content',
-  // 致远 OA
   '.workflow-comments', '.approval-comments',
   '[class*="workflow"][class*="comment"]', '[class*="opinion"][class*="content"]',
-  // 蓝凌 OA
   '.km-comment-content', '.km-approval-opinion',
-  '[class*="km"][class*="opinion"]', '.lui-flowcomment-content',
-  // 钉钉/宜搭
-  '.dingtalk-comment', '.approval-node-comment',
-  '[data-mark="comment"]', '[data-spm="comment"]',
-  // 企业微信
-  '.ww-comment', '.ww-approval-opinion',
-  // 飞书
-  '.lark-comment', '.lark-approval-opinion',
-  // 通用审批相关
-  '[class*="approval"][class*="opinion"]', '[class*="audit"][class*="comment"]',
-  '[class*="review"][class*="comment"]', '[class*="check"][class*="opinion"]',
-  // 富文本编辑器的审批意见
-  '.cke_editable', '.ql-editor', '.tox-edit-area__iframe',
-  // 表格中的审批列
-  'td[class*="comment"]', 'td[class*="opinion"]',
-  // 手风琴/折叠面板内的审批意见
-  '.ant-collapse-content-box [class*="comment"]',
-  '.el-collapse-item__content [class*="comment"]'
+  '[class*="approval"][class*="opinion"]', '[class*="audit"][class*="comment"]'
 ];
 
 // 折叠/手风琴面板选择器
 const COLLAPSIBLE_SELECTORS = [
-  // Ant Design
   '.ant-collapse', '.ant-collapse-item', '.ant-collapse-content',
-  // Element UI
   '.el-collapse', '.el-collapse-item', '.el-collapse-item__content',
-  // Bootstrap
   '.accordion', '.accordion-item', '.accordion-collapse', '.collapse',
-  // Material UI
   '.MuiAccordion-root', '.MuiAccordionDetails-root',
-  // 通用
-  '[class*="collapse"]:not([class*="bootstrap"])', '[class*="accordion"]',
+  '[class*="collapse"]', '[class*="accordion"]',
   '[class*="expandable"]', '[class*="collapsible"]',
-  // 自定义折叠面板
   '[role="region"][aria-expanded]', '[aria-expanded]',
-  // 折叠详情
   'details', 'details > summary',
-  // OA系统常用
   '.wf-panel', '.wf-section', '.req-detail-panel',
-  '.flow-panel', '.process-panel', '.detail-panel',
-  '[class*="panel"][class*="collapse"]', '[class*="section"][class*="collapse"]'
+  '.flow-panel', '.process-panel', '.detail-panel'
 ];
 
 // 工作流/审批流程选择器
 const WORKFLOW_SELECTORS = [
-  // 流程节点
   '.workflow-node', '.process-node', '.approval-node',
   '.flow-node', '[class*="workflow"][class*="node"]',
   '[class*="process"][class*="step"]', '[class*="approval"][class*="step"]',
-  // 流程图
   '.flow-chart', '.process-chart', '.workflow-chart',
-  '.flow-diagram', '.process-diagram',
-  // 步骤条
   '.ant-steps', '.el-steps', '[class*="step"][class*="list"]',
-  // 时间线
-  '.ant-timeline', '.el-timeline', '.timeline',
-  '[class*="timeline"]', '[class*="time-line"]'
+  '.ant-timeline', '.el-timeline', '.timeline'
 ];
 
 // 富文本编辑器内容选择器
 const RICH_EDITOR_SELECTORS = [
-  // CKEditor
   '.cke_editable', '.cke_contents',
-  // Quill
   '.ql-editor', '.ql-container',
-  // TinyMCE
   '.tox-edit-area', '.mce-content-body',
-  // UEditor
   '.edui-editor-iframeholder', '.edui-body',
-  // WangEditor
   '.w-e-text-container', '.w-e-text',
-  // Draft.js
-  '.DraftEditor-editorContainer',
-  // Slate
-  '[data-slate-editor]',
-  // 通用 contenteditable
-  '[contenteditable="true"]',
-  // 设计器/表单编辑器
-  '.form-designer', '.form-builder', '.form-render'
+  '[contenteditable="true"]'
 ];
 
-// 数据表格选择器（表单数据）
-const DATA_TABLE_SELECTORS = [
-  // Ant Design
-  '.ant-table', '.ant-table-body',
-  // Element UI
-  '.el-table', '.el-table__body',
-  // Bootstrap
-  '.table', '.table-responsive',
-  // Material UI
-  '.MuiTable-root', '.MuiTableBody-root',
-  // 数据网格
-  '.data-grid', '.datagrid', '.data-table',
-  // 明细表/子表
-  '.detail-table', '.sub-table', '[class*="detail"][class*="table"]',
-  '[class*="sub"][class*="table"]', '.child-table',
-  // OA表单
-  '.wf-field-table', '.req-detail-table',
-  '.form-detail-table', '.main-table'
-];
 
-// 从折叠面板提取内容
+
+// 从折叠面板提取内容（去重版本）
 function extractCollapsibleContent(collectedContent = []) {
-  console.log("[Content] 开始提取折叠面板内容");
+  const processedElements = new Set();
+  const extractedTexts = []; // 存储已提取的文本内容用于子串检查
 
-  const processed = new Set(); // 避免重复
+  // 辅助函数：检查内容是否是已提取内容的子集或重复
+  function isDuplicateOrSubset(newText) {
+    for (const existing of extractedTexts) {
+      // 如果新内容几乎与已有内容相同
+      if (Math.abs(newText.length - existing.length) < 50 &&
+          (newText.includes(existing.substring(0, 100)) || existing.includes(newText.substring(0, 100)))) {
+        return true;
+      }
+      // 如果新内容明显是已有内容的子集（长度差距很大但内容包含）
+      if (newText.length < existing.length * 0.9 && existing.includes(newText.substring(0, Math.min(newText.length, 200)))) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   COLLAPSIBLE_SELECTORS.forEach(selector => {
     try {
       const elements = document.querySelectorAll(selector);
-      elements.forEach((el, idx) => {
+      elements.forEach((el) => {
         try {
-          // 跳过已处理的元素
-          if (processed.has(el)) return;
-
-          // 检查元素是否包含有效内容
+          if (processedElements.has(el)) return;
           const text = el.innerText?.trim() || '';
           if (text.length < 20) return;
 
-          // 尝试展开折叠面板以获取完整内容
+          // 跳过已经被父元素处理的元素（通过选择器重叠）
+          let parent = el.parentElement;
+          while (parent) {
+            if (processedElements.has(parent)) return;
+            parent = parent.parentElement;
+          }
+
           const clone = el.cloneNode(true);
 
-          // 查找并展开所有折叠的内容
+          // 移除 style 和 script 标签
+          clone.querySelectorAll('style, script, noscript, link[rel="stylesheet"]').forEach(el2 => el2.remove());
+
           const collapsedElements = clone.querySelectorAll([
             '[style*="display: none"]',
-            '[style*="display:none"]',
-            '.hidden', '.collapsed', '[aria-hidden="true"]',
-            '[hidden]'
+            '.hidden', '.collapsed', '[aria-hidden="true"]', '[hidden]'
           ].join(','));
 
           collapsedElements.forEach(collapsed => {
@@ -314,1428 +242,439 @@ function extractCollapsibleContent(collectedContent = []) {
             collapsed.removeAttribute('aria-hidden');
           });
 
-          const expandedContent = clone.innerText?.trim() || text;
+          let expandedContent = clone.innerText?.trim() || text;
+          // 清理 CSS 内容
+          expandedContent = cleanContentFromStyleAndScript(expandedContent);
 
-          // 获取面板标题
-          let title = '';
-          const headerSelectors = [
-            '.ant-collapse-header', '.el-collapse-item__header',
-            '.accordion-header', 'summary', '[class*="header"][class*="collapse"]',
-            '[role="button"][aria-expanded]'
-          ];
-
-          for (const headerSel of headerSelectors) {
-            const header = el.querySelector(headerSel);
-            if (header) {
-              title = header.innerText?.trim()?.substring(0, 50);
-              break;
-            }
+          // 检查是否是重复或子集内容
+          if (isDuplicateOrSubset(expandedContent)) {
+            return;
           }
 
-          if (!title) {
-            title = `折叠面板 ${idx + 1}`;
-          }
+          let title = '折叠面板';
+          const header = el.querySelector('.ant-collapse-header, .el-collapse-item__header, summary');
+          if (header) title = header.innerText.trim().substring(0, 50);
 
           collectedContent.push({
-            type: 'collapsible',
-            title: title,
-            content: expandedContent,
-            selector: selector,
-            length: expandedContent.length
+            type: 'collapsible', title, content: expandedContent
           });
-
-          processed.add(el);
-
-          console.log(`[Content] 提取折叠面板 "${title}"，内容长度:`, expandedContent.length);
-        } catch (e) {
-          console.warn('[Content] 处理折叠面板元素失败:', e.message);
-        }
-      });
-    } catch (e) {
-      // 忽略无效选择器
-    }
-  });
-
-  return collectedContent;
-}
-
-// 提取审批意见和评论
-function extractApprovalComments(collectedContent = []) {
-  console.log("[Content] 开始提取审批意见");
-
-  const processed = new Set();
-
-  APPROVAL_COMMENT_SELECTORS.forEach(selector => {
-    try {
-      const elements = document.querySelectorAll(selector);
-      elements.forEach((el, idx) => {
-        try {
-          if (processed.has(el)) return;
-
-          // 获取审批意见内容
-          let content = '';
-
-          // 如果是富文本编辑器，尝试获取 iframe 内容
-          if (el.tagName === 'IFRAME') {
-            try {
-              const doc = el.contentDocument || el.contentWindow?.document;
-              if (doc && doc.body) {
-                content = doc.body.innerText?.trim() || doc.body.textContent?.trim() || '';
-              }
-            } catch (e) {
-              // 跨域 iframe，尝试获取其他属性
-              content = el.textContent?.trim() || '';
-            }
-          } else {
-            content = el.innerText?.trim() || el.textContent?.trim() || '';
-          }
-
-          if (content.length < 5) return;
-
-          // 获取审批人信息
-          let approver = '';
-          let time = '';
-          let action = '';
-
-          // 向上查找审批人信息
-          let parent = el.parentElement;
-          for (let i = 0; i < 5 && parent; i++) {
-            // 查找审批人姓名
-            const nameSelectors = [
-              '[class*="name"]', '[class*="user"]', '[class*="approver"]',
-              '[class*="operator"]', '[class*="handler"]',
-              'strong', 'b', '.username', '.user-name'
-            ];
-
-            for (const nameSel of nameSelectors) {
-              const nameEl = parent.querySelector(nameSel);
-              if (nameEl && !approver) {
-                approver = nameEl.innerText?.trim();
-                if (approver.length > 20) approver = approver.substring(0, 20);
-              }
-            }
-
-            // 查找时间
-            const timeSelectors = [
-              '[class*="time"]', '[class*="date"]', '[class*="datetime"]',
-              'time', '[datetime]'
-            ];
-
-            for (const timeSel of timeSelectors) {
-              const timeEl = parent.querySelector(timeSel);
-              if (timeEl && !time) {
-                time = timeEl.innerText?.trim() || timeEl.getAttribute('datetime');
-              }
-            }
-
-            // 查找审批动作（同意、驳回等）
-            const actionSelectors = [
-              '[class*="action"]', '[class*="result"]', '[class*="status"]',
-              '[class*="opinion"]', '.approval-result', '.flow-result'
-            ];
-
-            for (const actionSel of actionSelectors) {
-              const actionEl = parent.querySelector(actionSel);
-              if (actionEl && !action) {
-                action = actionEl.innerText?.trim();
-                if (action.length > 10) action = action.substring(0, 10);
-              }
-            }
-
-            parent = parent.parentElement;
-          }
-
-          // 构建审批意见对象
-          const comment = {
-            type: 'approval_comment',
-            approver: approver || '未知审批人',
-            time: time || '',
-            action: action || '',
-            content: content,
-            selector: selector
-          };
-
-          // 避免重复内容（检查是否已存在相似内容）
-          const isDuplicate = collectedContent.some(c =>
-            c.type === 'approval_comment' &&
-            c.content.substring(0, 100) === content.substring(0, 100)
-          );
-
-          if (!isDuplicate) {
-            collectedContent.push(comment);
-            console.log(`[Content] 提取审批意见: ${approver} [${action}]，长度:`, content.length);
-          }
-
-          processed.add(el);
-        } catch (e) {
-          console.warn('[Content] 处理审批意见元素失败:', e.message);
-        }
-      });
-    } catch (e) {
-      // 忽略无效选择器
-    }
-  });
-
-  return collectedContent;
-}
-
-// 提取工作流/审批流程信息
-function extractWorkflowInfo(collectedContent = []) {
-  console.log("[Content] 开始提取工作流信息");
-
-  // 提取流程节点
-  const nodes = [];
-  WORKFLOW_SELECTORS.forEach(selector => {
-    try {
-      const elements = document.querySelectorAll(selector);
-      elements.forEach(el => {
-        try {
-          const text = el.innerText?.trim();
-          if (text && text.length > 0 && text.length < 500) {
-            // 检查是否包含节点信息
-            if (text.includes('审批') || text.includes('审核') ||
-                text.includes('同意') || text.includes('驳回') ||
-                text.includes('待') || text.includes('处理') ||
-                text.includes('已') || text.includes('通过')) {
-              nodes.push(text);
-            }
-          }
+          extractedTexts.push(expandedContent); // 记录已提取的文本
+          console.log('[Content] 提取折叠面板内容:', title, expandedContent.length, '字符:', expandedContent.substring(0, 100) + (expandedContent.length > 100 ? '...' : ''));
+          processedElements.add(el);
         } catch (e) {}
       });
     } catch (e) {}
   });
-
-  if (nodes.length > 0) {
-    // 去重
-    const uniqueNodes = [...new Set(nodes)];
-    collectedContent.push({
-      type: 'workflow_nodes',
-      nodes: uniqueNodes.slice(0, 20), // 限制节点数量
-      count: uniqueNodes.length
-    });
-    console.log('[Content] 提取工作流节点:', uniqueNodes.length, '个');
-  }
-
-  // 提取当前审批状态
-  const statusSelectors = [
-    '[class*="current"][class*="status"]', '[class*="active"][class*="step"]',
-    '.current-node', '.active-node', '.current-status',
-    '[class*="审批中"]', '[class*="进行中"]'
-  ];
-
-  for (const selector of statusSelectors) {
-    try {
-      const el = document.querySelector(selector);
-      if (el) {
-        const status = el.innerText?.trim();
-        if (status) {
-          collectedContent.push({
-            type: 'current_status',
-            status: status
-          });
-          console.log('[Content] 提取当前状态:', status);
-          break;
-        }
-      }
-    } catch (e) {}
-  }
-
   return collectedContent;
 }
 
-// 提取数据表格内容
-function extractDataTables(collectedContent = []) {
-  console.log("[Content] 开始提取数据表格");
+// 提取审批意见（去重版本）
+function extractApprovalComments(collectedContent = []) {
+  const processed = new Set();
+  const extractedTexts = []; // 存储已提取的文本用于去重
 
-  DATA_TABLE_SELECTORS.forEach(selector => {
-    try {
-      const tables = document.querySelectorAll(selector);
-      tables.forEach((table, idx) => {
-        try {
-          // 获取表头
-          const headers = [];
-          const headerSelectors = ['thead th', 'th', '[role="columnheader"]', '[class*="header"]', 'tr:first-child td'];
-
-          for (const hSel of headerSelectors) {
-            const headerCells = table.querySelectorAll(hSel);
-            if (headerCells.length > 0) {
-              headerCells.forEach(cell => {
-                const text = cell.innerText?.trim();
-                if (text) headers.push(text);
-              });
-              if (headers.length > 0) break;
-            }
-          }
-
-          // 获取表格内容
-          const rows = [];
-          const rowSelectors = ['tbody tr', 'tr'];
-
-          for (const rSel of rowSelectors) {
-            const rowElements = table.querySelectorAll(rSel);
-            if (rowElements.length > 0) {
-              rowElements.forEach((row, rowIdx) => {
-                if (rowIdx === 0 && headers.length > 0) return; // 跳过表头行
-
-                const cells = row.querySelectorAll('td, th');
-                const rowData = [];
-                cells.forEach(cell => {
-                  const text = cell.innerText?.trim();
-                  if (text) rowData.push(text);
-                });
-
-                if (rowData.length > 0) {
-                  rows.push(rowData);
-                }
-              });
-              if (rows.length > 0) break;
-            }
-          }
-
-          if (rows.length > 0) {
-            const title = headers.length > 0 ? `表格: ${headers.join(', ').substring(0, 50)}` : `数据表 ${idx + 1}`;
-
-            collectedContent.push({
-              type: 'data_table',
-              title: title,
-              headers: headers.slice(0, 10),
-              rows: rows.slice(0, 50), // 限制行数
-              totalRows: rows.length
-            });
-
-            console.log(`[Content] 提取数据表 "${title}"，${rows.length} 行`);
-          }
-        } catch (e) {
-          console.warn('[Content] 处理数据表失败:', e.message);
-        }
-      });
-    } catch (e) {}
-  });
-
-  return collectedContent;
-}
-
-// 提取 Steps 组件的内容
-function extractStepsContent(clone, original) {
-  if (!clone || !clone.querySelector) return null;
-
-  const stepsContainer = clone.querySelector('.ant-steps, [class*="steps"]');
-  if (!stepsContainer) {
-    return null;
-  }
-
-  console.log("[Content] 检测到 Steps 组件");
-
-  const stepTitles = [];
-  const stepElements = stepsContainer.querySelectorAll('.ant-steps-item, [class*="step-item"]');
-
-  stepElements.forEach((step, idx) => {
-    const titleEl = step.querySelector('.ant-steps-item-title, [class*="step-title"]');
-    if (titleEl) {
-      stepTitles.push(titleEl.innerText.trim() || `步骤 ${idx + 1}`);
-    } else {
-      const text = step.innerText.trim().split('\n')[0];
-      stepTitles.push(text || `步骤 ${idx + 1}`);
-    }
-  });
-
-  console.log("[Content] 发现 Steps 标题:", stepTitles);
-
-  const allContent = [];
-  const contentAreas = clone.querySelectorAll('.ant-card-body, .ant-card, [class*="card"]');
-  contentAreas.forEach((area, idx) => {
-    const content = area.innerText.trim();
-    if (content.length > 50) {
-      const title = stepTitles[idx] || `步骤 ${idx + 1}`;
-      allContent.push({
-        title: title,
-        content: content
-      });
-    }
-  });
-
-  if (allContent.length > 0) {
-    let result = `[包含 ${stepTitles.length} 个步骤/阶段]\n`;
-    const seen = new Set();
-    allContent.forEach(item => {
-      const key = item.content.substring(0, 100);
-      if (!seen.has(key)) {
-        seen.add(key);
-        result += `\n=== ${item.title} ===\n${item.content}\n`;
+  // 辅助函数：检查内容是否是已提取内容的子集或重复
+  function isDuplicateOrSubset(newText) {
+    for (const existing of extractedTexts) {
+      // 如果内容几乎相同
+      if (Math.abs(newText.length - existing.length) < 30 &&
+          (newText.includes(existing.substring(0, 80)) || existing.includes(newText.substring(0, 80)))) {
+        return true;
       }
-    });
-    return result.trim();
-  }
-
-  const fullContent = clone.innerText.trim();
-  if (fullContent.length > 0) {
-    const activeStep = stepTitles.find(title => fullContent.includes(title)) || stepTitles[0] || '当前步骤';
-
-    let result = `[Steps 组件: ${stepTitles.length} 个步骤]\n`;
-    result += `步骤列表: ${stepTitles.join(' → ')}\n`;
-    result += `\n=== 当前显示: ${activeStep} ===\n${fullContent}\n`;
-
-    if (stepTitles.length > 1) {
-      result += `\n[提示: 其他 ${stepTitles.length - 1} 个步骤内容未加载，切换到其他步骤可查看]`;
-    }
-
-    return result.trim();
-  }
-
-  return null;
-}
-
-// 获取元素中的所有内容，包括隐藏的 Tab 面板
-function getAllContentFromElement(element, includeHidden = true) {
-  if (!includeHidden) {
-    return element.innerText.trim();
-  }
-
-  const clone = element.cloneNode(true);
-
-  if (hasTabStructure(element)) {
-    console.log("[Content] 检测到 Tab/Steps 结构，提取所有内容");
-
-    const stepsContent = extractStepsContent(clone, element);
-    if (stepsContent) {
-      return stepsContent;
-    }
-
-    const tabPanelSelectors = [
-      '[role="tabpanel"]',
-      '.tab-pane', '.tab-panel', '.tab-content > *',
-      '.ant-tabs-tabpane', '.el-tab-pane', '.v-tab-item',
-      '[class*="tab-pane"]', '[class*="tab-panel"]',
-      '.tabs-content > *', '.tab-body > *'
-    ];
-
-    const panelContents = [];
-    let tabIndex = 1;
-
-    for (const selector of tabPanelSelectors) {
-      try {
-        const panels = clone.querySelectorAll(selector);
-        panels.forEach((panel, idx) => {
-          const content = panel.innerText.trim();
-          if (content.length > 10) {
-          let tabTitle = '';
-          const tabId = panel.getAttribute('aria-labelledby');
-          if (tabId) {
-            // aria-labelledby 可能包含多个 ID，取第一个
-            const firstId = tabId.split(/\s+/)[0];
-            const tabEl = element.ownerDocument.getElementById(firstId);
-            if (tabEl) {
-              tabTitle = tabEl.innerText.trim();
-            }
-          }
-
-            panelContents.push({
-              index: tabIndex++,
-              title: tabTitle || `Tab ${idx + 1}`,
-              content: content,
-              selector: selector
-            });
-          }
-        });
-      } catch (e) {
-        // 忽略无效选择器
+      // 如果新内容是已有内容的子集
+      if (newText.length < existing.length * 0.85 && existing.includes(newText.substring(0, Math.min(newText.length, 150)))) {
+        return true;
       }
     }
-
-    if (panelContents.length > 0) {
-      let result = `[包含 ${panelContents.length} 个 Tab]\n`;
-      panelContents.forEach(panel => {
-        result += `\n--- ${panel.title} ---\n${panel.content}\n`;
-      });
-      return result.trim();
-    }
+    return false;
   }
 
-  const contentAreas = clone.querySelectorAll('*');
-  let hasHiddenContent = false;
-
-  // 扩展的隐藏类名列表，包括OA系统常用的
-  const hiddenClasses = [
-    'hidden', 'hide', 'd-none', 'invisible', 'collapsed',
-    'ant-collapse-content-hidden', 'el-collapse-item__content',
-    'ant-tabs-tabpane-inactive', 'tab-pane-hidden',
-    'panel-collapse', 'panel-body-collapse',
-    '[class*="collapse"][class*="content"]', '[class*="fold"]',
-    'closed', 'close', 'fold', 'unfolded', 'wrapped'
-  ];
-
-  contentAreas.forEach(el => {
-    // 处理 style 中的 display:none
-    const style = el.getAttribute('style');
-    if (style) {
-      const displayMatch = style.match(/display\s*:\s*none/i);
-      const visibilityMatch = style.match(/visibility\s*:\s*hidden/i);
-      if (displayMatch || visibilityMatch) {
-        el.style.display = 'block';
-        el.style.visibility = 'visible';
-        hasHiddenContent = true;
-      }
-    }
-
-    // 处理 height: 0 或 max-height: 0 的折叠内容
-    const computedStyle = el.style;
-    if (computedStyle) {
-      if (computedStyle.height === '0px' || computedStyle.height === '0') {
-        el.style.height = 'auto';
-        hasHiddenContent = true;
-      }
-      if (computedStyle.maxHeight === '0px' || computedStyle.maxHeight === '0') {
-        el.style.maxHeight = 'none';
-        hasHiddenContent = true;
-      }
-    }
-
-    // 处理隐藏类名
-    hiddenClasses.forEach(cls => {
-      try {
-        if (el.classList.contains(cls)) {
-          el.classList.remove(cls);
-          // 添加显示类名
-          el.classList.add('show', 'active', 'open');
-          hasHiddenContent = true;
-        }
-      } catch (e) {
-        // 忽略类名操作错误
-      }
-    });
-
-    // 移除影响显示的属性
-    const hideAttrs = ['hidden', 'aria-hidden', 'data-collapsed', 'data-folded'];
-    hideAttrs.forEach(attr => {
-      if (el.hasAttribute(attr)) {
-        if (attr === 'hidden') {
-          el.removeAttribute('hidden');
-        } else {
-          el.setAttribute(attr, 'false');
-        }
-        hasHiddenContent = true;
-      }
-    });
-
-    // 处理 aria-expanded
-    if (el.getAttribute('aria-expanded') === 'false') {
-      el.setAttribute('aria-expanded', 'true');
-    }
-  });
-
-  const content = clone.innerText?.trim() || '';
-
-  if (hasHiddenContent) {
-    console.log("[Content] 提取到包含隐藏区域的内容，长度:", content.length);
-  }
-
-  return content;
-}
-
-// 获取弹窗内容
-function getModalContent() {
-  console.log("[Content] 开始获取弹窗内容");
-  const modalContents = [];
-
-  try {
-    const dialogs = document.querySelectorAll('dialog');
-    dialogs.forEach(dialog => {
-      try {
-        if (isVisible(dialog)) {
-          const content = getAllContentFromElement(dialog, true);
-          if (content.length > 0) {
-            modalContents.push({
-              type: 'dialog',
-              content: content,
-              hasTabs: hasTabStructure(dialog),
-              open: dialog.open || dialog.matches(':modal') || dialog.matches(':open')
-            });
-            console.log("[Content] 发现 <dialog> 元素，内容长度:", content.length, "包含Tab:", hasTabStructure(dialog));
-          }
-        }
-      } catch (e) {
-        console.warn("[Content] 处理 <dialog> 元素时出错:", e.message);
-      }
-    });
-  } catch (e) {
-    console.error("[Content] 查询 <dialog> 元素失败:", e.message);
-  }
-
-  try {
-    const ariaDialogs = document.querySelectorAll('[role="dialog"]');
-    ariaDialogs.forEach(dialog => {
-      try {
-        if (isVisible(dialog)) {
-          const content = getAllContentFromElement(dialog, true);
-          if (content.length > 0) {
-            modalContents.push({
-              type: 'aria-dialog',
-              content: content,
-              hasTabs: hasTabStructure(dialog)
-            });
-            console.log("[Content] 发现 role='dialog' 元素，内容长度:", content.length, "包含Tab:", hasTabStructure(dialog));
-          }
-        }
-      } catch (e) {
-        console.warn("[Content] 处理 role='dialog' 元素时出错:", e.message);
-      }
-    });
-  } catch (e) {
-    console.error("[Content] 查询 role='dialog' 元素失败:", e.message);
-  }
-
-  try {
-    const alertDialogs = document.querySelectorAll('[role="alertdialog"]');
-    alertDialogs.forEach(dialog => {
-      try {
-        if (isVisible(dialog)) {
-          const content = getAllContentFromElement(dialog, true);
-          if (content.length > 0) {
-            modalContents.push({
-              type: 'alertdialog',
-              content: content,
-              hasTabs: hasTabStructure(dialog)
-            });
-            console.log("[Content] 发现 role='alertdialog' 元素，内容长度:", content.length, "包含Tab:", hasTabStructure(dialog));
-          }
-        }
-      } catch (e) {
-        console.warn("[Content] 处理 role='alertdialog' 元素时出错:", e.message);
-      }
-    });
-  } catch (e) {
-    console.error("[Content] 查询 role='alertdialog' 元素失败:", e.message);
-  }
-
-  const modalSelectors = [
-    '.modal', '.modal-dialog', '.modal-content',
-    '[class*="modal"]', '[class*="dialog"]',
-    '.popup', '.pop-up', '[class*="popup"]',
-    '.overlay', '[class*="overlay"]',
-    '.layer', '[class*="layer"]'
-  ];
-
-  modalSelectors.forEach(selector => {
+  APPROVAL_COMMENT_SELECTORS.forEach(selector => {
     try {
       const elements = document.querySelectorAll(selector);
       elements.forEach(el => {
-        try {
-          if (isVisible(el)) {
-            const content = getAllContentFromElement(el, true);
-            if (content.length > 20) {
-              modalContents.push({
-                type: 'class-modal',
-                selector: selector,
-                content: content,
-                hasTabs: hasTabStructure(el)
-              });
-              console.log("[Content] 发现弹窗类元素 (", selector, ")，内容长度:", content.length, "包含Tab:", hasTabStructure(el));
-            }
-          }
-        } catch (e) {
-          // 忽略单个元素处理错误
+        if (processed.has(el)) return;
+        let content = '';
+
+        if (el.tagName === 'IFRAME') {
+          try {
+            const doc = el.contentDocument || el.contentWindow?.document;
+            content = doc?.body?.innerText?.trim() || '';
+          } catch (e) {}
+        } else {
+          const clone = el.cloneNode(true);
+          // 移除 style 和 script 标签
+          clone.querySelectorAll('style, script, noscript, link[rel="stylesheet"]').forEach(el2 => el2.remove());
+          content = clone.innerText?.trim() || '';
         }
+
+        // 清理 CSS 内容
+        content = cleanContentFromStyleAndScript(content);
+
+        if (content.length < 5) return;
+
+        // 检查是否是重复或子集内容
+        if (isDuplicateOrSubset(content)) {
+          return;
+        }
+
+        collectedContent.push({ type: 'approval_comment', content });
+        extractedTexts.push(content); // 记录已提取的文本
+        console.log('[Content] 提取审批意见:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
+        processed.add(el);
       });
-    } catch (e) {
-      // 忽略无效的选择器
-    }
+    } catch (e) {}
   });
-
-  try {
-    const popovers = document.querySelectorAll('[popover]');
-    popovers.forEach(popover => {
-      try {
-        if (isVisible(popover)) {
-          const content = getAllContentFromElement(popover, true);
-          if (content.length > 0) {
-        modalContents.push({
-          type: 'popover',
-          content: content,
-          hasTabs: hasTabStructure(popover)
-        });
-            console.log("[Content] 发现 popover 元素，内容长度:", content.length, "包含Tab:", hasTabStructure(popover));
-          }
-        }
-      } catch (e) {
-        console.warn("[Content] 处理 popover 元素时出错:", e.message);
-      }
-    });
-  } catch (e) {
-    console.error("[Content] 查询 popover 元素失败:", e.message);
-  }
-
-  try {
-    const allElements = document.querySelectorAll('div, section, aside');
-    allElements.forEach(el => {
-      try {
-        const style = window.getComputedStyle(el);
-        const zIndex = parseInt(style.zIndex);
-        const position = style.position;
-
-        if ((position === 'fixed' || position === 'sticky') && zIndex > 100) {
-          const content = getAllContentFromElement(el, true);
-          if (content.length > 50 && content.length < 5000) {
-            const isAlreadyIncluded = modalContents.some(m =>
-              m.content === content || content.includes(m.content)
-            );
-            if (!isAlreadyIncluded) {
-              modalContents.push({
-                type: 'floating',
-                position: position,
-                zIndex: zIndex,
-                content: content,
-                hasTabs: hasTabStructure(el)
-              });
-              console.log("[Content] 发现浮动弹窗元素 (z-index:", zIndex, ")，内容长度:", content.length, "包含Tab:", hasTabStructure(el));
-            }
-          }
-        }
-      } catch (e) {
-        // 忽略单个元素处理错误
-      }
-    });
-  } catch (e) {
-    console.error("[Content] 查询浮动元素失败:", e.message);
-  }
-
-  console.log("[Content] 共发现", modalContents.length, "个弹窗/模态框");
-  return modalContents;
+  return collectedContent;
 }
 
-// 内容长度限制（字符数），避免返回过长内容
-// 注意：这个限制应该大于 sidepanel.js 中的 contextLength，以允许 sidepanel 有足够的空间进行后续截断
-const MAX_CONTENT_LENGTH = 25000;
-
-// 智能截断内容，优先保留重要部分
-function truncateContent(content, maxLength) {
-  if (!content || content.length <= maxLength) {
-    return content;
-  }
-
-  console.log("[Content] 内容需要截断，原始长度:", content.length, "限制:", maxLength);
-
-  // 定义关键内容区域标记（按优先级排序）
-  const criticalSectionDefs = [
-    { start: '=== 审批意见/评论 ===', end: '=== 审批意见结束 ===', priority: 1 },
-    { start: '=== 当前弹窗/模态框内容 ===', end: '=== 弹窗内容结束 ===', priority: 2 },
-    { start: '=== 审批流程信息 ===', end: '=== 审批流程信息结束 ===', priority: 3 },
-    { start: '=== 数据表格 ===', end: '=== 数据表格结束 ===', priority: 4 },
-    { start: '=== 折叠面板内容 ===', end: '=== 折叠面板内容结束 ===', priority: 5 }
-  ];
-
-  // 提取所有关键内容区域
-  const extractedSections = [];
-  let remainingContent = content;
-
-  for (const def of criticalSectionDefs) {
-    const startIdx = remainingContent.indexOf(def.start);
-    const endIdx = remainingContent.indexOf(def.end);
-
-    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-      // 提取关键内容（包含标记）
-      const sectionContent = remainingContent.substring(startIdx, endIdx + def.end.length);
-      extractedSections.push({
-        content: sectionContent,
-        priority: def.priority,
-        length: sectionContent.length,
-        start: def.start,
-        end: def.end
+// 提取工作流信息
+function extractWorkflowInfo(collectedContent = []) {
+  const nodes = [];
+  WORKFLOW_SELECTORS.forEach(selector => {
+    try {
+      document.querySelectorAll(selector).forEach(el => {
+        const text = el.innerText.trim();
+        if (text && /审批|审核|同意|驳回|待处理/.test(text)) nodes.push(text);
       });
-
-      // 从剩余内容中移除这部分
-      remainingContent = remainingContent.substring(0, startIdx) + remainingContent.substring(endIdx + def.end.length);
-    }
-  }
-
-  // 计算关键内容的总长度
-  const criticalTotalLength = extractedSections.reduce((sum, s) => sum + s.length, 0);
-
-  // 如果关键内容本身就超过了限制，只保留关键内容（按优先级排序）
-  if (criticalTotalLength > maxLength) {
-    console.log("[Content] 关键内容超过限制，优先保留高优先级内容");
-
-    // 按优先级排序
-    extractedSections.sort((a, b) => a.priority - b.priority);
-
-    let result = '';
-    let currentLength = 0;
-
-    for (const section of extractedSections) {
-      if (currentLength + section.length <= maxLength) {
-        result += section.content + '\n\n';
-        currentLength += section.length + 2;
-      } else {
-        // 部分添加，保留最重要的审批意见
-        if (section.priority === 1) { // 审批意见是最高优先级
-          const availableLength = maxLength - currentLength - 50;
-          if (availableLength > 200) {
-            result += section.start + '\n';
-            result += section.content.substring(section.start.length, section.start.length + availableLength);
-            result += '\n...(审批意见已部分截断)...\n' + section.end + '\n\n';
-          }
-        }
-        break;
-      }
-    }
-
-    return result.trim() + '\n\n[注意：主体内容已被截断，仅保留关键信息]';
-  }
-
-  // 关键内容未超过限制，保留关键内容 + 部分主体内容
-  const availableForBody = maxLength - criticalTotalLength - 100;
-
-  // 提取主体内容（在关键内容标记之外的部分）
-  let bodyContent = remainingContent.trim();
-  if (bodyContent.length > availableForBody) {
-    // 找到合适的截断点（尽量在段落边界）
-    let truncatePoint = availableForBody;
-    const paragraphBreak = bodyContent.lastIndexOf('\n\n', truncatePoint);
-    const lineBreak = bodyContent.lastIndexOf('\n', truncatePoint);
-
-    if (paragraphBreak > truncatePoint * 0.7) {
-      truncatePoint = paragraphBreak;
-    } else if (lineBreak > truncatePoint * 0.8) {
-      truncatePoint = lineBreak;
-    }
-
-    bodyContent = bodyContent.substring(0, truncatePoint) + '\n\n...(主体内容已截断，保留 ' + Math.round(truncatePoint / bodyContent.length * 100) + '%)';
-  }
-
-  // 按原始顺序组装内容（审批意见 -> 弹窗 -> 流程信息 -> 数据表格 -> 折叠面板）
-  extractedSections.sort((a, b) => {
-    const aIndex = content.indexOf(a.content);
-    const bIndex = content.indexOf(b.content);
-    return aIndex - bIndex;
+    } catch (e) {}
   });
 
-  let result = '';
-
-  // 先添加主体内容
-  if (bodyContent) {
-    result += '=== 页面主体内容 ===\n' + bodyContent + '\n\n';
+  if (nodes.length) {
+    const uniqueNodes = [...new Set(nodes)];
+    collectedContent.push({
+      type: 'workflow_nodes', nodes: uniqueNodes
+    });
+    console.log('[Content] 提取工作流信息:', uniqueNodes.length, '个节点:', uniqueNodes.slice(0, 3).join(', ') + (uniqueNodes.length > 3 ? '...' : ''));
   }
-
-  // 再添加关键内容
-  for (const section of extractedSections) {
-    result += section.content + '\n\n';
-  }
-
-  return result.trim();
+  return collectedContent;
 }
 
-// 特定网站内容提取选择器
-const SPECIAL_SITE_CONTENT_SELECTORS = [
-  // 文章主内容区 - 文章详情页
-  '.Post-RichTextContainer',
-  '.Post-content',
-  '.Post-NormalMain .RichText',
-  '.Post-NormalMain',
-  // 回答/评论区内容区
-  '.RichContent-inner',
-  '.RichContent--unescapable',
-  '.RichContent',
-  '.RichText',
-  '[class*="RichText"]',
-  // 问题页面
-  '.QuestionRichText-content',
-  '.QuestionRichText',
-  '.QuestionHeader-detail',
-  // 回答列表项
-  '.List-item .ContentItem-content',
-  '.List-item .RichContent',
-  '.List-item',
-  '.AnswerCard-content',
-  '.ContentItem-content',
-  '.ContentItem-main',
-  '.ContentItem',
-  // 文章内容
-  '.Article-content',
-  '.Article-title',
-  '[itemprop="articleBody"]',
-  // 热榜/推荐
-  '.TopstoryItem .ContentItem-content',
-  '.TopstoryItem',
-  // 通用内容容器
-  '.Card .ContentItem',
-  '.Card'
+// 提取Steps/Tab内容
+function extractStepsContent(clone) {
+  const steps = clone.querySelector('.ant-steps, [class*="steps"]');
+  if (!steps) return null;
+
+  const titles = Array.from(steps.querySelectorAll('.ant-steps-item-title, [class*="step-title"]'))
+    .map(el => el.innerText.trim());
+  return `[步骤组件] ${titles.join(' → ')}\n${clone.innerText.trim()}`;
+}
+
+// 清理内容中的CSS和脚本
+function cleanContentFromStyleAndScript(text) {
+  if (!text) return text;
+  // 移除 CSS 规则块（@page, .class, #id 等）
+  let cleaned = text
+    // 移除 @page, @media 等 CSS at-rules
+    .replace(/@\w+\s+\w+\s*\{[^}]*\}/gs, '')
+    // 移除 CSS 选择器规则块
+    .replace(/[.#][\w-]+\s*\{[^}]*\}/gs, '')
+    // 移除 [attribute] 选择器规则块
+    .replace(/\[[\w-]+[^\]]*\]\s*\{[^}]*\}/gs, '')
+    // 移除 CSS 属性行（mso-开头，font-family等）
+    .replace(/^\s*[\w-]+:\s*[^;]+;?\s*$/gmi, '')
+    // 移除 CSS 类定义（如 .jdf-doc-editor, .enlarge-main-text 等）
+    .replace(/\.[\w-]+[\w\s.,:>\-]*\{[^}]*\}/gs, '')
+    // 移除 /* 注释 */
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    // 清理连续空行
+    .replace(/\n\s*\n\s*\n/g, '\n\n')
+    .trim();
+  return cleaned;
+}
+
+// 需要过滤移除的 UI 组件选择器
+const UI_COMPONENTS_TO_REMOVE = [
+  // 日期/时间选择器相关
+  '.ant-picker-dropdown', '.ant-calendar-picker', '.ant-calendar',
+  '.ant-picker-panel', '.ant-picker-date-panel', '.ant-picker-time-panel',
+  '.ant-picker-range-arrow', '.ant-picker-header',
+  '.el-picker-dropdown', '.el-date-picker', '.el-time-picker',
+  '.el-date-table', '.el-year-table', '.el-month-table',
+  // 下拉菜单/选择器
+  '.ant-select-dropdown', '.ant-select-dropdown-menu',
+  '.el-select-dropdown', '.el-dropdown-menu',
+  // 加载状态
+  '.ant-spin', '.ant-spin-container', '.el-loading-spinner',
+  '[class*="loading"]', '[class*="spinner"]',
+  // 空状态/无数据
+  '.ant-empty', '.el-empty', '.ant-select-item-empty',
+  '[class*="empty"][class*="no-data"]', '[class*="no-match"]',
+  // 弹窗/浮层（非内容区域）
+  '.ant-tooltip', '.ant-popover', '.el-tooltip', '.el-popover',
+  '.ant-modal-wrap', '.ant-modal-mask', '.el-dialog__wrapper'
 ];
 
-// 特定网站内容过滤 - 移除 CSS 变量等无关内容
-function cleanSpecialSiteContent(content) {
-  if (!content) return '';
+// 获取元素完整内容（含隐藏）
+function getAllContentFromElement(element) {
+  const clone = element.cloneNode(true);
 
-  // 过滤掉纯样式内容
-  let cleaned = content.split('\n').filter(line => {
-    const trimmed = line.trim();
+  // 移除 style 和 script 标签
+  clone.querySelectorAll('style, script, noscript, link[rel="stylesheet"]').forEach(el => el.remove());
 
-    // 保留非空行
-    if (trimmed.length === 0) return true;
+  // 移除 UI 组件（日历、下拉框、加载状态等）
+  UI_COMPONENTS_TO_REMOVE.forEach(selector => {
+    try {
+      clone.querySelectorAll(selector).forEach(el => el.remove());
+    } catch (e) {}
+  });
 
-    // 过滤纯 CSS 变量行
-    if (/^--[a-z0-9-]+:\s*[\d,\s;]+$/.test(trimmed)) return false;
-    if (/^--[a-z0-9-]+:\s*#?[\da-f]+;?$/i.test(trimmed)) return false;
+  if (hasTabStructure(element)) {
+    const steps = extractStepsContent(clone);
+    if (steps) return cleanContentFromStyleAndScript(steps);
+  }
 
-    // 过滤纯 RGB 颜色值行
-    if (/^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(trimmed)) return false;
+  clone.querySelectorAll('[style*="display:none"], [hidden], .hidden, .collapsed').forEach(el => {
+    el.style.display = 'block';
+    el.removeAttribute('hidden');
+  });
 
-    // 过滤 CSS 类名定义行（如: .class-name { ... }）
-    if (/^[.#][a-z0-9_-]+\s*\{/.test(trimmed)) return false;
+  const rawText = clone.innerText?.trim() || '';
+  let cleanedText = cleanContentFromStyleAndScript(rawText);
 
-    // 过滤纯样式属性行（如: color: #333;）
-    if (/^[a-z-]+:\s*[^;]+;?$/i.test(trimmed) && trimmed.length < 100) return false;
+  // 过滤纯数字列表（如日历日期、时间选择器数字等）
+  cleanedText = cleanedText
+    // 移除纯数字行（1-99 的单个数字或连续数字列表）
+    .replace(/\n\s*(\d{1,2}\s+){10,}/g, '\n')  // 连续10个以上短数字
+    .replace(/\n\s*\d{1,2}(\s+\d{1,2}){5,}\s*\n/g, '\n')  // 6个以上的数字序列
+    // 移除 "00010203...59" 这类时间选择器数字
+    .replace(/\d{2}(\d{2}){20,}/g, '')
+    // 移除 "202020212022..." 年份列表
+    .replace(/(20|19)\d{2}(\s+(20|19)\d{2}){3,}/g, '')
+    // 移除 "一月二月三月...十二月" 月份列表
+    .replace(/(一月|二月|三月|四月|五月|六月|七月|八月|九月|十月|十一月|十二月)(\s+\1){2,}/g, '')
+    // 移除 "日一二三四五六" 星期列表
+    .replace(/日\s+一\s+二\s+三\s+四\s+五\s+六/g, '')
+    .replace(/[日月火水木金土]\s+[日月火水木金土](\s+[日月火水木金土]){4,}/g, '')
+    // 移除 "上午 下午" 的重复选项
+    .replace(/(上午|下午)(\s+\1){2,}/g, '$1')
+    .replace(/(上午|下午)\s+无匹配数据(\s+\1\s+无匹配数据)+/gi, '')
+    // 移除 "请选择..." 下拉提示
+    .replace(/请选择[^\n]*\n\s*无匹配数据/gi, '')
+    // 移除 "正在加载..." 提示
+    .replace(/正在加载\.{0,3}/g, '')
+    // 移除 "加载中..."
+    .replace(/加载中\.{0,3}/g, '')
+    // 清理多余空行
+    .replace(/\n\s*\n\s*\n/g, '\n\n')
+    .trim();
 
-    // 过滤连续的数字和逗号（颜色值序列）
-    if (/^[\d,\s;]+$/.test(trimmed) && trimmed.length < 50) return false;
-
-    return true;
-  }).join('\n');
-
-  return cleaned.trim();
+  return cleanedText;
 }
 
-// 检查元素是否只包含样式/无意义内容
-function isStyleOnlyElement(element) {
-  const text = element.textContent?.trim() || '';
-  const innerHTML = element.innerHTML || '';
+// 获取弹窗内容（去重版本）
+function getModalContent() {
+  const modals = [];
+  const processedElements = new Set();
+  const extractedTexts = []; // 存储已提取的文本用于去重
 
-  // 如果内容太少，可能是样式容器
-  if (text.length < 50) return true;
+  console.log('[Content] 开始获取弹窗内容...');
+  const selectors = ['dialog', '[role="dialog"]', '[role="alertdialog"]', '.modal', '.popup', '.layer'];
 
-  // 检查是否主要是 CSS 变量
-  const cssVarMatches = text.match(/^\s*--[a-z0-9-]+:/gm);
-  if (cssVarMatches && cssVarMatches.length > 3) return true;
+  // 辅助函数：检查内容是否是已提取内容的子集或重复
+  function isDuplicateOrSubset(newText) {
+    for (const existing of extractedTexts) {
+      // 如果内容几乎相同
+      if (Math.abs(newText.length - existing.length) < 50 &&
+          (newText.includes(existing.substring(0, 100)) || existing.includes(newText.substring(0, 100)))) {
+        return true;
+      }
+      // 如果新内容是已有内容的子集
+      if (newText.length < existing.length * 0.9 && existing.includes(newText.substring(0, Math.min(newText.length, 200)))) {
+        return true;
+      }
+    }
+    return false;
+  }
 
-  // 检查文本密度（文本长度 / HTML 长度）
-  const textDensity = text.length / (innerHTML.length || 1);
-  if (textDensity < 0.1 && text.length < 200) return true;
+  selectors.forEach(s => {
+    document.querySelectorAll(s).forEach(el => {
+      if (processedElements.has(el)) return;
+      if (isVisible(el)) {
+        const content = getAllContentFromElement(el);
+        if (content.length > 20 && !isDuplicateOrSubset(content)) {
+          modals.push({ content });
+          extractedTexts.push(content);
+          console.log('[Content] 提取弹窗内容:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
+          processedElements.add(el);
+        }
+      }
+    });
+  });
 
-  return false;
+  // 高层级浮动元素
+  document.querySelectorAll('div, section').forEach(el => {
+    if (processedElements.has(el)) return;
+    const style = getComputedStyle(el);
+    if (['fixed', 'sticky'].includes(style.position) && +style.zIndex > 100) {
+      const content = getAllContentFromElement(el);
+      if (content.length > 50 && !isDuplicateOrSubset(content)) {
+        modals.push({ content });
+        extractedTexts.push(content);
+        console.log('[Content] 提取高层级浮动元素:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
+        processedElements.add(el);
+      }
+    }
+  });
+
+  if (modals.length) {
+    console.log('[Content] 总共提取到', modals.length, '个弹窗/浮动层内容');
+  }
+  return modals;
 }
 
-// 智能提取特定网站内容 - 基于文本密度和内容质量
+// 内容提取（不再截断，保留完整内容）
+function truncateContent(content) {
+  return content;
+}
+
+// 特定网站内容提取
+function cleanSpecialSiteContent(c) {
+  return c.replace(/^\s*--[a-z0-9-]+:.+/gm, '').replace(/[\d,\s;]{10,}/g, '').trim();
+}
+
 function extractSpecialSiteSmartContent() {
-  console.log("[Content] 使用智能提取模式获取特定网站内容");
-
-  // 优先选择器 - 按优先级排序
-  const prioritySelectors = [
-    { selector: '.RichContent-inner', weight: 10 },
-    { selector: '.RichContent .RichText', weight: 10 },
-    { selector: '.Post-content .RichText', weight: 10 },
-    { selector: '.Post-NormalMain .RichText', weight: 10 },
-    { selector: '[itemprop="articleBody"]', weight: 9 },
-    { selector: '.QuestionRichText-content', weight: 8 },
-    { selector: '.AnswerCard-content .RichText', weight: 8 },
-    { selector: '.ContentItem-content .RichText', weight: 7 },
-    { selector: '.List-item .RichText', weight: 7 },
-    { selector: '.Card .RichText', weight: 6 },
-  ];
-
-  let bestContent = '';
-  let bestScore = 0;
-
-  for (const { selector, weight } of prioritySelectors) {
-    try {
-      const elements = document.querySelectorAll(selector);
-      for (const el of elements) {
-        // 跳过样式-only 元素
-        if (isStyleOnlyElement(el)) continue;
-
-        const text = el.textContent?.trim() || '';
-        if (text.length > 100) {
-          // 计算分数：文本长度 * 权重
-          const score = text.length * weight;
-          if (score > bestScore) {
-            bestScore = score;
-            bestContent = text;
-            console.log(`[Content] 找到高优先级内容 "${selector}"，长度: ${text.length}，分数: ${score}`);
-          }
-        }
-      }
-    } catch (e) {
-      // 忽略无效选择器
-    }
+  const selectors = ['.RichContent-inner', '.Post-content', '.QuestionRichText-content', '[itemprop="articleBody"]'];
+  for (const s of selectors) {
+    const el = document.querySelector(s);
+    if (el && el.textContent.length > 500) return el.textContent;
   }
-
-  // 如果没找到足够内容，尝试从 body 提取
-  if (bestContent.length < 500) {
-    console.log("[Content] 高优先级选择器未找到足够内容，扫描 body");
-
-    // 查找 body 中最大的文本块
-    const textBlocks = [];
-    const walk = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_ELEMENT,
-      null,
-      false
-    );
-
-    let node;
-    while (node = walk.nextNode()) {
-      // 跳过脚本、样式、导航等元素
-      const tagName = node.tagName?.toLowerCase();
-      if (['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript'].includes(tagName)) {
-        continue;
-      }
-
-      // 跳过样式-only 元素
-      if (isStyleOnlyElement(node)) continue;
-
-      const text = node.textContent?.trim() || '';
-      if (text.length > 500 && text.length < 20000) {
-        textBlocks.push({
-          element: node,
-          text: text,
-          length: text.length
-        });
-      }
-    }
-
-    // 选择内容最长的块
-    if (textBlocks.length > 0) {
-      textBlocks.sort((a, b) => b.length - a.length);
-      bestContent = textBlocks[0].text;
-      console.log(`[Content] 从 body 扫描找到最大文本块，长度: ${bestContent.length}`);
-    }
-  }
-
-  return bestContent;
+  return '';
 }
 
-// 获取网页正文内容
+// 获取页面内容（简化版 - 只提取主体内容）
 function getPageContent() {
-  console.log("[Content] 开始获取页面内容");
+  console.log('[Content] ========== 开始获取页面内容（简化模式 - 只提取主体） ==========');
+  console.log('[Content] 当前页面URL:', location.href);
+  const isZhihu = location.hostname.includes('zhihu.com');
 
-  const contents = [];
-  let specialContents = [];
-
-  // 检测是否是特定网站页面
-  const isSpecialSite = window.location.hostname.includes('zhihu.com');
-
-  // 获取弹窗内容
-  const modalContents = getModalContent();
-  if (modalContents.length > 0) {
-    specialContents.push("=== 当前弹窗/模态框内容 ===");
-    modalContents.forEach((modal, index) => {
-      specialContents.push(`\n--- 弹窗 ${index + 1} [${modal.type}] ---`);
-      specialContents.push(modal.content);
-    });
-    specialContents.push("\n=== 弹窗内容结束 ===\n");
-  }
-
-  // 获取折叠面板内容
-  const collapsibleContents = [];
-  extractCollapsibleContent(collapsibleContents);
-  if (collapsibleContents.length > 0) {
-    specialContents.push("=== 折叠面板内容 ===");
-    collapsibleContents.forEach(item => {
-      specialContents.push(`\n--- ${item.title} ---`);
-      specialContents.push(item.content);
-    });
-    specialContents.push("\n=== 折叠面板内容结束 ===\n");
-  }
-
-  // 获取审批意见
-  const approvalComments = [];
-  extractApprovalComments(approvalComments);
-  if (approvalComments.length > 0) {
-    specialContents.push("=== 审批意见/评论 ===");
-    approvalComments.forEach(comment => {
-      const header = `[${comment.approver}${comment.action ? ' - ' + comment.action : ''}${comment.time ? ' - ' + comment.time : ''}]`;
-      specialContents.push(`\n${header}`);
-      specialContents.push(comment.content);
-    });
-    specialContents.push("\n=== 审批意见结束 ===\n");
-  }
-
-  // 获取工作流信息
-  const workflowInfo = [];
-  extractWorkflowInfo(workflowInfo);
-  if (workflowInfo.length > 0) {
-    const workflowNodes = workflowInfo.find(i => i.type === 'workflow_nodes');
-    const currentStatus = workflowInfo.find(i => i.type === 'current_status');
-
-    if (workflowNodes || currentStatus) {
-      specialContents.push("=== 审批流程信息 ===");
-      if (currentStatus) {
-        specialContents.push(`当前状态: ${currentStatus.status}`);
-      }
-      if (workflowNodes && workflowNodes.nodes.length > 0) {
-        specialContents.push(`\n流程节点: ${workflowNodes.nodes.join(' → ')}`);
-      }
-      specialContents.push("\n=== 审批流程信息结束 ===\n");
+  // 主体内容
+  let mainContent = '';
+  if (isZhihu) {
+    const main = extractSpecialSiteSmartContent();
+    if (main) {
+      const cleaned = cleanSpecialSiteContent(main);
+      mainContent = cleaned;
+      console.log('[Content] 提取知乎主体内容:', cleaned.length, '字符');
     }
-  }
-
-  // 获取数据表格
-  const dataTables = [];
-  extractDataTables(dataTables);
-  if (dataTables.length > 0) {
-    specialContents.push("=== 数据表格 ===");
-    dataTables.forEach(table => {
-      specialContents.push(`\n--- ${table.title} ---`);
-      if (table.headers.length > 0) {
-        specialContents.push(`表头: ${table.headers.join(' | ')}`);
-      }
-      specialContents.push(`共 ${table.totalRows} 行数据`);
-      table.rows.slice(0, 10).forEach((row, idx) => {
-        specialContents.push(` 行${idx + 1}: ${row.join(' | ')}`);
-      });
-      if (table.totalRows > 10) {
-        specialContents.push(` ...(还有 ${table.totalRows - 10} 行未显示)`);
-      }
-    });
-    specialContents.push("\n=== 数据表格结束 ===\n");
-  }
-
-  // Shadow DOM 内容提取已禁用 - 通常只包含组件样式，不包含有用的正文内容
-  // 如需启用，请取消下面的注释：
-  // const shadowContents = [];
-  // extractShadowDOMContent(document.body, shadowContents);
-  // if (shadowContents.length > 0) {
-  //   specialContents.push("=== Shadow DOM 内容 ===");
-  //   shadowContents.forEach(c => specialContents.push(c));
-  //   specialContents.push("=== Shadow DOM 内容结束 ===\n");
-  // }
-
-  // 获取 iframe 内容
-  const iframeContents = [];
-  extractIframeContent(iframeContents);
-  if (iframeContents.length > 0) {
-    specialContents.push("=== iframe 内容 ===");
-    iframeContents.forEach(c => specialContents.push(c));
-    specialContents.push("=== iframe 内容结束 ===\n");
-  }
-  if (isSpecialSite) {
-    console.log("[Content] 检测到特定网站页面，使用智能提取模式");
-    console.log("[Content] 当前URL:", window.location.href);
-    console.log("[Content] 页面标题:", document.title);
-
-    // 使用智能提取函数
-    const specialContent = extractSpecialSiteSmartContent();
-
-    if (specialContent.length > 0) {
-      console.log(`[Content] 智能提取获取到内容，原始长度: ${specialContent.length}`);
-
-      // 清理特定网站内容
-      const cleanedContent = cleanSpecialSiteContent(specialContent);
-      console.log(`[Content] 清理后内容长度: ${cleanedContent.length} (过滤掉 ${specialContent.length - cleanedContent.length} 字符)`);
-
-      if (cleanedContent.length > 0) {
-        contents.push("=== 页面主体内容（特定网站） ===");
-        contents.push(cleanedContent);
-        // 合并特殊内容
-        contents.unshift(...specialContents);
-        const result = truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
-        console.log("[Content] 最终返回内容长度:", result.length);
-        return result;
-      }
-    }
-
-    console.log("[Content] 智能提取未找到内容，回退到标准提取");
-  }
-
-  // 尝试从 article 获取内容
-  const article = document.querySelector('article');
-  if (article) {
-    const content = getAllContentFromElement(article, false);
-    console.log("[Content] 从 <article> 获取内容，长度:", content.length);
-    if (content.length > 0) {
-      contents.push("=== 页面主体内容（来自 article） ===");
-      contents.push(content);
-    }
-    // 合并特殊内容
-    contents.unshift(...specialContents);
-    return truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
-  }
-
-  // 尝试从 main 获取内容
-  const main = document.querySelector('main');
-  if (main) {
-    const content = getAllContentFromElement(main, false);
-    console.log("[Content] 从 <main> 获取内容，长度:", content.length);
-    if (content.length > 0) {
-      contents.push("=== 页面主体内容（来自 main） ===");
-      contents.push(content);
-    }
-    // 合并特殊内容
-    contents.unshift(...specialContents);
-    return truncateContent(contents.join('\n'), MAX_CONTENT_LENGTH);
-  }
-
-  // 从 body 获取内容
-  const body = document.body;
-  const excludeTags = ['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript'];
-
-  try {
-    const clone = body.cloneNode(true);
-
-    excludeTags.forEach(tag => {
-      const elements = clone.querySelectorAll(tag);
-      elements.forEach(el => el.remove());
-    });
-
-    const commonSelectors = [
-      '.sidebar', '.nav', '.navigation', '.menu', '.header', '.footer',
-      '.advertisement', '.ads', '.comments', '.social-share',
-      '[role="navigation"]', '[role="banner"]', '[role="complementary"]'
-    ];
-    commonSelectors.forEach(selector => {
-      try {
-        const elements = clone.querySelectorAll(selector);
-        elements.forEach(el => el.remove());
-      } catch (e) {
-        // 忽略无效选择器
-      }
-    });
-
-    const content = clone.innerText?.trim() || '';
-    console.log("[Content] 从 body 获取内容，长度:", content.length);
-    if (content.length > 0) {
-      contents.push("=== 页面主体内容（来自 body） ===");
-      contents.push(content);
-    }
-  } catch (e) {
-    console.error("[Content] 从 body 获取内容失败:", e);
-  }
-
-  // 合并特殊内容
-  contents.unshift(...specialContents);
-
-  const result = contents.join('\n');
-
-  // 截断过长内容
-  return truncateContent(result, MAX_CONTENT_LENGTH);
-}
-
-// 获取网页元信息
-function getPageMetadata() {
-  const title = document.title || '';
-  const url = window.location.href;
-  const description = document.querySelector('meta[name="description"]')?.content || '';
-  const keywords = document.querySelector('meta[name="keywords"]')?.content || '';
-
-  return { title, url, description, keywords };
-}
-
-// 双击事件处理函数
-async function handleDoubleClick(e) {
-  if (!doubleClickEnabled) return;
-
-  const selectedText = getSelectedText();
-  if (!selectedText) {
-    try {
-      await chrome.runtime.sendMessage({ type: "OPEN_SIDEPANEL" });
-    } catch (e) {
-      console.error("[Content] 打开侧边栏失败:", e);
-    }
-  }
-}
-
-// 更新双击事件监听状态
-function updateDoubleClickState() {
-  if (doubleClickEnabled) {
-    document.addEventListener('dblclick', handleDoubleClick);
-    console.log("[Content] 双击唤醒功能已启用");
   } else {
+    const main = document.querySelector('main') || document.querySelector('article') || document.body;
+    mainContent = getAllContentFromElement(main);
+    console.log('[Content] 提取页面主体内容:', mainContent.length, '字符');
+  }
+
+  return mainContent;
+}
+
+// 元信息
+function getPageMetadata() {
+  const metadata = {
+    title: document.title,
+    url: location.href,
+    description: document.querySelector('meta[name="description"]')?.content || ''
+  };
+  console.log('[Content] 获取页面元信息:', metadata);
+  return metadata;
+}
+
+// 双击事件
+async function handleDoubleClick() {
+  if (!doubleClickEnabled) return;
+  if (!getSelectedText()) chrome.runtime.sendMessage({ type: "OPEN_SIDEPANEL" });
+}
+
+function updateDoubleClickState() {
+  doubleClickEnabled ?
+    document.addEventListener('dblclick', handleDoubleClick) :
     document.removeEventListener('dblclick', handleDoubleClick);
-    console.log("[Content] 双击唤醒功能已禁用");
-  }
 }
 
-// 初始化：读取双击设置
 async function initDoubleClickSetting() {
-  try {
-    const result = await chrome.storage.sync.get('enableDoubleClick');
-    doubleClickEnabled = result.enableDoubleClick === true;
-    updateDoubleClickState();
-  } catch (e) {
-    console.error("[Content] 读取双击设置失败:", e);
+  const res = await chrome.storage.sync.get('enableDoubleClick');
+  doubleClickEnabled = res.enableDoubleClick === true;
+  updateDoubleClickState();
+}
+
+// 页面变化监听
+function generateContentHash(c) {
+  let h = 0;
+  for (let i=0; i<c.length; i++) h = (h<<5) - h + c.charCodeAt(i);
+  return h + '_' + c.length;
+}
+
+function notifyPageChanged() {
+  const c = getPageContent();
+  const hash = generateContentHash(c);
+  if (hash !== lastPageContent) {
+    lastPageContent = hash;
+    chrome.runtime.sendMessage({ type: "PAGE_CONTENT_CHANGED" }).catch(()=>{});
   }
 }
 
-// 监听设置变化
-chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'sync' && changes.enableDoubleClick) {
-    doubleClickEnabled = changes.enableDoubleClick.newValue === true;
-    updateDoubleClickState();
-  }
-});
-
-// 监听来自 background 的消息
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "GET_SELECTED_TEXT") {
-    const text = getSelectedText();
-    sendResponse({ text });
-    return true;
-  }
-
-  if (msg.type === "GET_PAGE_CONTEXT") {
-    try {
-      console.log("[Content] 收到 GET_PAGE_CONTEXT 请求");
-      const content = getPageContent();
-      const metadata = getPageMetadata();
-
-      if (!content || content.length === 0) {
-        console.warn("[Content] 获取到的内容为空");
-        sendResponse({ content: "", metadata: metadata, error: "内容为空" });
-      } else {
-        console.log("[Content] 返回内容，长度:", content.length);
-        sendResponse({
-          content: content,
-          metadata: metadata
-        });
-      }
-    } catch (e) {
-      console.error("[Content] 获取页面上下文失败:", e);
-      sendResponse({ content: "", metadata: {}, error: e.message });
-    }
-    return true;
-  }
-
-  if (msg.type === "GET_PAGE_COOKIES") {
-    try {
-      console.log("[Content] 收到 GET_PAGE_COOKIES 请求");
-      const cookies = document.cookie;
-      const localStorageData = {};
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          localStorageData[key] = localStorage.getItem(key);
-        }
-      } catch (e) {
-        console.warn("[Content] 读取 localStorage 失败:", e.message);
-      }
-      const sessionStorageData = {};
-      try {
-        for (let i = 0; i < sessionStorage.length; i++) {
-          const key = sessionStorage.key(i);
-          sessionStorageData[key] = sessionStorage.getItem(key);
-        }
-      } catch (e) {
-        console.warn("[Content] 读取 sessionStorage 失败:", e.message);
-      }
-      sendResponse({
-        cookies: cookies,
-        localStorage: localStorageData,
-        sessionStorage: sessionStorageData,
-        url: window.location.href,
-        domain: window.location.hostname
-      });
-    } catch (e) {
-      console.error("[Content] 获取页面存储数据失败:", e);
-      sendResponse({ cookies: "", localStorage: {}, sessionStorage: {}, url: window.location.href, domain: "", error: e.message });
-    }
-    return true;
-  }
-});
-
-// 启动初始化
-initDoubleClickSetting();
-
-// 启动页面变化检测
-startPageChangeDetection();
-
-// 页面变化检测
 function startPageChangeDetection() {
   if (isObserving) return;
-  
-  console.log("[Content] 启动页面变化检测");
   isObserving = true;
-  
-  // 使用 MutationObserver 监听 DOM 变化
-  pageChangeObserver = new MutationObserver((mutations) => {
-    // 过滤掉不重要的变化（如属性变化、文本微变等）
-    const significantChange = mutations.some(mutation => {
-      // 忽略属性变化
-      if (mutation.type === 'attributes') return false;
-      
-      // 检查是否有新增或删除的节点
-      if (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
-        // 过滤掉脚本、样式等无关节点
-        const hasMeaningfulChange = [...mutation.addedNodes, ...mutation.removedNodes].some(node => {
-          if (node.nodeType !== Node.ELEMENT_NODE) return false;
-          const tagName = node.tagName?.toLowerCase();
-          return !['script', 'style', 'link', 'meta', 'noscript'].includes(tagName);
-        });
-        return hasMeaningfulChange;
-      }
-      
-      return false;
-    });
-    
-    if (significantChange) {
-      // 防抖：延迟发送，避免频繁触发
+
+  // DOM变化
+  pageChangeObserver = new MutationObserver(m => {
+    const change = m.some(x =>
+      (x.addedNodes.length || x.removedNodes.length) &&
+      [...x.addedNodes, ...x.removedNodes].some(n =>
+        n.nodeType === 1 && !['script','style'].includes(n.tagName.toLowerCase())
+      )
+    );
+    if (change) {
       clearTimeout(pageChangeTimeout);
-      pageChangeTimeout = setTimeout(() => {
-        notifyPageChanged();
-      }, 1000);
+      pageChangeTimeout = setTimeout(notifyPageChanged, 1000);
     }
   });
-  
-  // 监听整个 document 的变化
-  pageChangeObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: false,
-    characterData: false
-  });
-  
-  // 监听 URL 变化（用于 SPA 单页应用）
+  pageChangeObserver.observe(document.body, { childList: true, subtree: true });
+
+  // URL变化
   let lastUrl = location.href;
   new MutationObserver(() => {
-    const currentUrl = location.href;
-    if (currentUrl !== lastUrl) {
-      lastUrl = currentUrl;
-      console.log("[Content] URL 变化检测到:", currentUrl);
-      setTimeout(() => notifyPageChanged(), 500);
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      setTimeout(notifyPageChanged, 500);
     }
   }).observe(document, { subtree: true, childList: true });
 }
 
-// 生成内容哈希（用于更精确地检测内容变化）
-function generateContentHash(content) {
-  if (!content) return '';
-
-  // 清理内容：去除多余空白，提取关键文本
-  const cleaned = content
-    .replace(/\s+/g, ' ')
-    .trim()
-    .substring(0, 800); // 增加采样长度到800字符
-
-  // 使用简单的哈希算法
-  let hash = 0;
-  for (let i = 0; i < cleaned.length; i++) {
-    const char = cleaned.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // 转为32位整数
+// 消息监听
+chrome.runtime.onMessage.addListener((msg, _, res) => {
+  if (msg.type === "GET_SELECTED_TEXT") {
+    const text = getSelectedText();
+    console.log('[Content] 收到 GET_SELECTED_TEXT 请求，返回文本长度:', text.length);
+    return res({ text: text });
   }
-
-  // 同时保存原始内容长度作为辅助判断
-  return `${hash}_${content.length}`;
-}
-
-// 通知页面已变化
-function notifyPageChanged() {
-  try {
-    // 获取当前内容哈希，避免重复通知相同内容
-    const currentContent = getPageContent();
-    const contentHash = generateContentHash(currentContent);
-
-    if (contentHash !== lastPageContent) {
-      lastPageContent = contentHash;
-      console.log("[Content] 页面内容发生变化，通知 sidepanel");
-
-      // 发送消息给 sidepanel
-      chrome.runtime.sendMessage({
-        type: "PAGE_CONTENT_CHANGED",
-        url: location.href,
-        title: document.title
-      }).catch(e => {
-        // sidepanel 可能未打开，忽略错误
-        console.log("[Content] 发送变化通知失败（sidepanel 可能未打开）:", e.message);
-      });
-    }
-  } catch (e) {
-    console.error("[Content] 检测页面变化失败:", e);
+  if (msg.type === "GET_PAGE_CONTEXT") {
+    console.log('[Content] 收到 GET_PAGE_CONTEXT 请求，开始获取页面内容...');
+    const content = getPageContent();
+    const metadata = getPageMetadata();
+    console.log('[Content] 返回页面内容，长度:', content.length, '字符，元信息:', metadata);
+    return res({ content: content, metadata: metadata });
   }
-}
+  if (msg.type === "GET_PAGE_COOKIES") {
+    console.log('[Content] 收到 GET_PAGE_COOKIES 请求，返回 cookies 和存储信息');
+    const result = {
+      cookies: document.cookie,
+      localStorage: {...localStorage},
+      sessionStorage: {...sessionStorage},
+      url: location.href
+    };
+    console.log('[Content] Cookies 长度:', document.cookie.length, 'localStorage 条目:', Object.keys(localStorage).length, 'sessionStorage 条目:', Object.keys(sessionStorage).length);
+    return res(result);
+  }
+});
+
+// 设置监听
+chrome.storage.onChanged.addListener(c => {
+  if (c.enableDoubleClick) {
+    doubleClickEnabled = c.enableDoubleClick.newValue === true;
+    updateDoubleClickState();
+  }
+});
+
+// 初始化
+initDoubleClickSetting();
+startPageChangeDetection();

@@ -5,7 +5,7 @@ import logging
 from typing import Optional, Dict, Any, AsyncGenerator, Tuple
 from app.config import get_env
 from app.schemas import ChatRequest
-from app.models_config import get_model_config, should_use_thinking_param
+from app.models_config import get_model_config
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +73,15 @@ async def stream_chat(
 
 
 def _build_auth_header(api_key: str) -> str:
-    """构建认证头"""
-    if not api_key.startswith("Bearer ") and not api_key.startswith("sk-"):
-        return f"Bearer {api_key}"
-    return api_key
+    """构建认证头
+    如果 API Key 不以 "Bearer " 开头，则自动添加
+    """
+    if not api_key:
+        return ""
+    # 确保 API Key 以 Bearer 开头
+    if api_key.startswith("Bearer "):
+        return api_key
+    return f"Bearer {api_key}"
 
 
 def _build_request_body(request: ChatRequest, model: str, config) -> Dict[str, Any]:
@@ -85,16 +90,9 @@ def _build_request_body(request: ChatRequest, model: str, config) -> Dict[str, A
         "model": model,
         "messages": [{"role": m.role, "content": m.content} for m in request.messages],
         "temperature": config.temperature,
-        "max_tokens": config.max_tokens,
         "stream": request.stream,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
-
-    # 只有支持思考参数的模型才需要传递
-    if should_use_thinking_param(model) and request.enable_thinking is not None:
-        body["chat_template_kwargs"] = {"enable_thinking": request.enable_thinking}
-        logger.debug(
-            f"Added enable_thinking={request.enable_thinking} for model {model}"
-        )
 
     return body
 

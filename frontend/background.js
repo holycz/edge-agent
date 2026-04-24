@@ -64,9 +64,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   console.log("[Background] menuItemId:", info.menuItemId);
   console.log("[Background] Tab对象:", tab);
   console.log("[Background] Tab.windowId:", tab?.windowId);
-  console.log("[Background] 选中文本:", info.selectionText);
 
   const text = info.selectionText?.trim();
+  if (text) {
+    console.log("[Background] 选中文本:", text.length, "字符:", text.substring(0, 100) + (text.length > 100 ? "..." : ""));
+  } else {
+    console.log("[Background] 选中文本: 无");
+  }
   let prompt = "";
   let action = "";
 
@@ -105,7 +109,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     prompt = "请分析并总结当前网页中的领导批示内容";
   }
 
-  console.log("[Background] 处理后的action:", action, "prompt:", prompt);
+  console.log("[Background] 处理后的 action:", action);
+  if (text) {
+    console.log("[Background] 最终 prompt 长度:", prompt.length, "字符, 内容:", prompt.substring(0, 150) + (prompt.length > 150 ? "..." : ""));
+  }
 
   if (!action) {
     console.log("[Background] 没有匹配到任何动作，退出");
@@ -117,6 +124,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     pendingAction: action,
     pendingSelectedText: text || ""
   };
+  console.log("[Background] 准备存储的数据:", {
+    pendingAction: storageData.pendingAction,
+    pendingQuestionLength: storageData.pendingQuestion?.length || 0,
+    pendingSelectedTextLength: storageData.pendingSelectedText?.length || 0
+  });
 
   console.log("[Background] 正在打开侧边栏...");
 
@@ -197,12 +209,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const sessionId = msg.sessionId || 'default';
     console.log("[Background] 收到后端 API 代理请求, sessionId:", sessionId);
 
+    try {
+      const requestBody = JSON.parse(msg.body);
+      console.log("[Background] 请求消息数:", requestBody.messages?.length || 0);
+      if (requestBody.messages && requestBody.messages.length > 0) {
+        const lastMessage = requestBody.messages[requestBody.messages.length - 1];
+        console.log("[Background] 最后一条消息角色:", lastMessage.role, "内容长度:", lastMessage.content?.length || 0);
+        if (lastMessage.content) {
+          console.log("[Background] 最后一条消息内容预览:", lastMessage.content.substring(0, 200) + (lastMessage.content.length > 200 ? "..." : ""));
+        }
+      }
+    } catch (e) {
+      console.log("[Background] 无法解析请求体:", e.message);
+    }
+
     (async () => {
       const abortController = new AbortController();
       activeStreams.set(sessionId, abortController);
 
       try {
-        const res = await fetch(`${BACKEND_URL}/api/chat`, {
+        // 使用前端指定的 endpoint，默认使用 AI问答智能体
+      const endpoint = msg.endpoint || "/sxzypt/scene_gateway/agent/open/4";
+      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -274,39 +302,80 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             const dataStr = trimmed.substring(6);
             if (!dataStr) continue;
 
-            try {
-              const parsed = JSON.parse(dataStr);
+      try {
+        const parsed = JSON.parse(dataStr);
+        const choices = parsed.choices;
+        if (!choices || !Array.isArray(choices) || choices.length === 0) continue;
 
-              if (parsed.type === "STREAM_ERROR") {
-                chrome.runtime.sendMessage({
-                  type: "STREAM_ERROR",
-                  error: parsed.error,
-                  sessionId
-                }).catch(() => {});
-                activeStreams.delete(sessionId);
-                return;
-              }
+        const delta = choices[0].delta;
+        if (!delta) continue;
 
-              if (parsed.type === "STREAM_DONE") {
-                chrome.runtime.sendMessage({
-                  type: "STREAM_DONE",
-                  sessionId
-                }).catch(() => {});
-                activeStreams.delete(sessionId);
-                return;
-              }
+        // 处理错误
+        if (delta.error) {
+          chrome.runtime.sendMessage({
+            type: "STREAM_ERROR",
+            error: delta.error,
+            sessionId
+          }).catch(() => {});
+          activeStreams.delete(sessionId);
+          return;
+        }
 
-              if (parsed.type === "STREAM_CHUNK") {
-                chrome.runtime.sendMessage({
-                  type: "STREAM_CHUNK",
-                  content: parsed.content,
-                  contentType: parsed.contentType,
-                  sessionId
-                }).catch(() => {});
-              }
-            } catch (e) {
-              // ignore parse errors for partial chunks
-            }
+        // 处理状态更新 (think_start)
+        if (delta.status === "processing") {
+          chrome.runtime.sendMessage({
+            type: "STREAM_CHUNK",
+            content: "",
+            contentType: "think_start",
+            sessionId
+          }).catch(() => {});
+          continue;
+        }
+
+        // 处理推理内容
+        if (delta.reasoning_content) {
+          chrome.runtime.sendMessage({
+            type: "STREAM_CHUNK",
+            content: delta.reasoning_content,
+            contentType: "think",
+            sessionId
+          }).catch(() => {});
+          continue;
+        }
+
+        // 处理性能指标 (think_end)
+        if (delta.performanceMetrics) {
+          chrome.runtime.sendMessage({
+            type: "STREAM_CHUNK",
+            content: "",
+            contentType: "think_end",
+            sessionId
+          }).catch(() => {});
+          continue;
+        }
+
+        // 处理结束标记
+        if (delta.content === "end#end") {
+          chrome.runtime.sendMessage({
+            type: "STREAM_DONE",
+            sessionId
+          }).catch(() => {});
+          activeStreams.delete(sessionId);
+          return;
+        }
+
+        // 处理普通内容
+        if (delta.content !== undefined) {
+          chrome.runtime.sendMessage({
+            type: "STREAM_CHUNK",
+            content: delta.content,
+            contentType: "content",
+            sessionId
+          }).catch(() => {});
+        }
+      } catch (e) {
+        // ignore parse errors for partial chunks
+      }
           }
         }
 
