@@ -50,13 +50,15 @@ edge-agent/
 
 | 智能体ID | 接口路径 | 功能说明 | 对应前端操作 |
 |----------|----------|----------|--------------|
-| 1 | `/sxzypt/scene_gateway/agent/open/1` | 网页总结智能体 | 未选中文本时点击「总结该网页」 |
-| 2 | `/sxzypt/scene_gateway/agent/open/2` | 文本润色智能体 | 选中文本时点击「润色改写」 |
-| 3 | `/sxzypt/scene_gateway/agent/open/3` | 文本稽核智能体 | 选中文本时点击「稽核检查」 |
-| 4 | `/sxzypt/scene_gateway/agent/open/4` | AI问答智能体 | 页面对话输入问题 |
+| ac32fe9431b1444f8ac3cdf42901024e | `/sxzypt/scene_gateway/agent/open/ac32fe9431b1444f8ac3cdf42901024e` | 网页总结智能体 | 未选中文本时点击「总结该网页」 |
+| bbad433949b64fab8de7f1a26d6ab56c | `/sxzypt/scene_gateway/agent/open/bbad433949b64fab8de7f1a26d6ab56c` | 文本润色智能体 | 选中文本时点击「润色改写」 |
+| a03444b0e45d416fbc0a494b46a2c55b | `/sxzypt/scene_gateway/agent/open/a03444b0e45d416fbc0a494b46a2c55b` | 文本稽核智能体 | 选中文本时点击「稽核检查」 |
+| ddf09cedfcbd4d188adc528461a91392 | `/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392` | AI问答智能体 | 页面对话输入问题 |
 | 205a099ade6a4c4fb454e11f96ee6a18 | `/sxzypt/scene_gateway/agent/open/205a099ade6a4c4fb454e11f96ee6a18` | 公文批示总结智能体 | 未选中文本时点击「总结领导批示」 |
 
-**注意**：前端不直接存储或传输 API Key，所有 AI 请求都通过后端代理。
+**注意**：
+- 前端不直接存储或传输 API Key，所有 AI 请求都通过后端代理。
+- 后端是内部智能体平台的模拟适配层，前端请求格式与内部智能体接口对齐，部分参数（如 `AuthToken`）在当前后端中可能未实际使用，但必须保留以确保前端可无缝切换到内部智能体平台。
 
 三、后端（backend/）
 
@@ -99,7 +101,7 @@ data: {"choices": [{"delta":{"status":"processing"}}]}          # 思考开始
 data: {"choices": [{"delta":{"reasoning_content":"..."}}]}       # 思考内容
 data: {"choices": [{"delta":{"performanceMetrics":{...}}}]}        # 思考结束，性能指标
 data: {"choices": [{"delta":{"content":"回答内容"}}]}              # 回答内容
-data: {"choices": [{"delta":{"content":"end#end"}}]}               # 流结束
+data: {"choices": [{"delta":{"content":"end##end"}}]}              # 流结束
 ```
 
 四、开发规范
@@ -110,7 +112,7 @@ data: {"choices": [{"delta":{"content":"end#end"}}]}               # 流结束
 - 所有对 AI API 的请求必须通过 `background.js` 转发到后端
 - 不存储或显示 API Key
 - 配置保存在 `chrome.storage.sync` 本地存储
-- 调用智能体时使用 `callAgent(agentId, text, action, pageContent, pageMetadata)` 函数
+- 调用智能体时使用 `callAgent(agentId, content, isQA, pageMetadata, dialogId, enableThinking, isContinuation)` 函数
 
 ### 4.2 后端开发
 
@@ -131,32 +133,49 @@ data: {"choices": [{"delta":{"content":"end#end"}}]}               # 流结束
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/sxzypt/scene_gateway/agent/open/1` | 网页总结智能体（SSE）|
-| POST | `/sxzypt/scene_gateway/agent/open/2` | 文本润色智能体（SSE）|
-| POST | `/sxzypt/scene_gateway/agent/open/3` | 文本稽核智能体（SSE）|
-| POST | `/sxzypt/scene_gateway/agent/open/4` | AI问答智能体（SSE）|
+| POST | `/sxzypt/scene_gateway/agent/open/ac32fe9431b1444f8ac3cdf42901024e` | 网页总结智能体（SSE）|
+| POST | `/sxzypt/scene_gateway/agent/open/bbad433949b64fab8de7f1a26d6ab56c` | 文本润色智能体（SSE）|
+| POST | `/sxzypt/scene_gateway/agent/open/a03444b0e45d416fbc0a494b46a2c55b` | 文本稽核智能体（SSE）|
+| POST | `/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392` | AI问答智能体（SSE）|
 | POST | `/sxzypt/scene_gateway/agent/open/205a099ade6a4c4fb454e11f96ee6a18` | 公文批示总结智能体（SSE）|
 
 ### 5.2 数据模型
 
-请求体格式（`ChatRequest`）：
+请求体格式（`AgentRequest`）：
 
 ```json
 {
-  "messages": [
-    {"role": "system", "content": "..."},
-    {"role": "user", "content": "..."}
-  ],
+  "requestId": "时间戳+6位随机数",
+  "dialogId": "(yyyyMMddHHmmssSSS)+6位随机数，同一对话需保持相同",
+  "keyword": "用户输入内容（首次对话包含页面上下文，后续对话只含用户问题）",
   "stream": true,
   "enable_thinking": true,
   "page_cookies": {}
 }
 ```
 
+其中 `keyword` 字段在不同场景下的格式：
+
+- **AI问答智能体首次对话**：
+  ```
+  --- 页面上下文 ---
+  页面标题: xxx
+  页面地址: xxx
+  [页面内容]
+  --- 页面上下文结束 ---
+
+  用户问题: xxx
+  ```
+- **AI问答智能体后续对话**：`用户问题: xxx`
+- **其他智能体（润色/稽核/总结等）**：直接传入选中文本或页面内容
+- **公文批示总结智能体**：`【我的身份信息】\n...\n\n【OA审批页面内容】\n[页面内容]`
+
 ### 5.3 前端消息通信
 
-1. `GET_BACKEND_URL` - 获取后端服务地址（默认 http://localhost:8765）
-2. `API_STREAM_REQUEST` - 发送流式请求到后端，需包含 `endpoint` 字段
+1. `GET_BACKEND_URL` - 获取后端服务地址（默认 http://10.142.135.57:8000）
+2. `API_STREAM_REQUEST` - 发送流式请求到后端，需包含 `endpoint`、`body`、`sessionId` 字段
+3. `ABORT_STREAM` - 中止流式请求，需包含 `sessionId` 字段
+4. `OPEN_SIDEPANEL` - 从 content script 打开侧边栏
 
 六、调试与部署
 

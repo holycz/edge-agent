@@ -2,7 +2,7 @@ import httpx
 import json
 import os
 import logging
-from typing import Optional, Dict, Any, AsyncGenerator, Tuple
+from typing import Optional, Dict, Any, AsyncGenerator
 from app.config import get_env
 from app.schemas import ChatRequest
 from app.models_config import get_model_config
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 async def stream_chat(
-    request: ChatRequest, page_cookies: Optional[Dict[str, Any]] = None
+    request: ChatRequest
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     流式调用 AI API，支持多种模型的推理模式

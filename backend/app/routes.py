@@ -34,7 +34,7 @@ def format_sse_event(event: dict) -> str:
         data = {"choices": [{"delta": {"error": event["error"]}}]}
     elif event["type"] == "done":
         # 发送结束标记
-        data = {"choices": [{"delta": {"content": "end#end"}}]}
+        data = {"choices": [{"delta": {"content": "end##end"}}]}
         _stream_start_time = None
     elif event["type"] == "chunk":
         content_type = event.get("content_type", "content")
@@ -190,7 +190,6 @@ def _build_chat_request(
         messages=messages,
         stream=request.stream,
         enable_thinking=request.enable_thinking,
-        page_cookies=request.page_cookies,
     )
 
 
@@ -246,7 +245,7 @@ def _parse_keyword_for_qa(
 # ========== 智能体接口 ==========
 
 
-@router.post("/sxzypt/scene_gateway/agent/open/1")
+@router.post("/sxzypt/scene_gateway/agent/open/ac32fe9431b1444f8ac3cdf42901024e")
 async def summarize_page_agent(request: AgentRequest):
     """网页总结智能体 - 自动总结当前页面内容
 
@@ -275,12 +274,9 @@ async def summarize_page_agent(request: AgentRequest):
 
     # 构建内部使用的 ChatRequest
     chat_request = _build_chat_request(request, messages)
-    page_cookies_data = (
-        request.page_cookies.model_dump() if request.page_cookies else None
-    )
 
     async def event_generator():
-        async for event in stream_chat(chat_request, page_cookies=page_cookies_data):
+        async for event in stream_chat(chat_request):
             yield format_sse_event(event)
 
     return StreamingResponse(
@@ -294,7 +290,7 @@ async def summarize_page_agent(request: AgentRequest):
     )
 
 
-@router.post("/sxzypt/scene_gateway/agent/open/2")
+@router.post("/sxzypt/scene_gateway/agent/open/bbad433949b64fab8de7f1a26d6ab56c")
 async def rewrite_agent(request: AgentRequest):
     """文本润色智能体 - 润色改写给定的文本
 
@@ -324,12 +320,9 @@ async def rewrite_agent(request: AgentRequest):
 
     # 构建内部使用的 ChatRequest
     chat_request = _build_chat_request(request, messages)
-    page_cookies_data = (
-        request.page_cookies.model_dump() if request.page_cookies else None
-    )
 
     async def event_generator():
-        async for event in stream_chat(chat_request, page_cookies=page_cookies_data):
+        async for event in stream_chat(chat_request):
             yield format_sse_event(event)
 
     return StreamingResponse(
@@ -343,7 +336,7 @@ async def rewrite_agent(request: AgentRequest):
     )
 
 
-@router.post("/sxzypt/scene_gateway/agent/open/3")
+@router.post("/sxzypt/scene_gateway/agent/open/a03444b0e45d416fbc0a494b46a2c55b")
 async def proofread_agent(request: AgentRequest):
     """文本稽核智能体 - 稽核检查给定文本
 
@@ -373,12 +366,9 @@ async def proofread_agent(request: AgentRequest):
 
     # 构建内部使用的 ChatRequest
     chat_request = _build_chat_request(request, messages)
-    page_cookies_data = (
-        request.page_cookies.model_dump() if request.page_cookies else None
-    )
 
     async def event_generator():
-        async for event in stream_chat(chat_request, page_cookies=page_cookies_data):
+        async for event in stream_chat(chat_request):
             yield format_sse_event(event)
 
     return StreamingResponse(
@@ -392,7 +382,7 @@ async def proofread_agent(request: AgentRequest):
     )
 
 
-@router.post("/sxzypt/scene_gateway/agent/open/4")
+@router.post("/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392")
 async def qa_agent(request: AgentRequest):
     """AI问答智能体 - 基于页面内容的问答（支持多轮对话，后端维护上下文）
 
@@ -417,11 +407,10 @@ async def qa_agent(request: AgentRequest):
     """
     if not _check_api_key():
         raise HTTPException(status_code=503, detail="API Key 未配置")
-
-    if not request.dialogId:
-        raise HTTPException(
-            status_code=400, detail="AI问答模式必须提供 dialogId 以维护对话上下文"
-        )
+    # if not request.dialogId:
+    #     raise HTTPException(
+    #         status_code=400, detail="AI问答模式必须提供 dialogId 以维护对话上下文"
+    #     )
 
     # 1. 获取或创建对话会话
     session = dialog_manager.get_or_create_session(request.dialogId)
@@ -432,34 +421,32 @@ async def qa_agent(request: AgentRequest):
     # 如果是首次对话且提取到了页面上下文，保存到会话
     if page_context and len(session.messages) == 0:
         session.set_page_context(page_context)
-        logger.info(
-            f"[QA Agent] 首次对话，保存页面上下文到会话 {request.dialogId}, 长度: {len(page_context)}"
-        )
+        # logger.info(
+        #     f"[QA Agent] 首次对话，保存页面上下文到会话 {request.dialogId}, 长度: {len(page_context)}"
+        # )
+    logger.info(f"[QA Agent] 首次对话，保存页面上下文到会话 {request.keyword}")
 
     # 3. 添加用户问题到对话历史
     session.add_message("user", user_question)
-    logger.info(
-        f"[QA Agent] 添加用户消息到会话 {request.dialogId}, 当前消息数: {len(session.messages)}"
-    )
+    # logger.info(
+    #     f"[QA Agent] 添加用户消息到会话 {request.dialogId}, 当前消息数: {len(session.messages)}"
+    # )
 
     # 4. 构建用于 API 调用的消息列表
     messages = session.get_messages_for_api()
-    logger.info(
-        f"[QA Agent] 会话 {request.dialogId} 构建消息列表: {len(messages)} 条 (含页面上下文)"
-    )
+    # logger.info(
+    #     f"[QA Agent] 会话 {request.dialogId} 构建消息列表: {len(messages)} 条 (含页面上下文)"
+    # )
 
     # 5. 构建内部 ChatRequest
     chat_request = _build_chat_request(request, messages)
-    page_cookies_data = (
-        request.page_cookies.model_dump() if request.page_cookies else None
-    )
 
     # 6. 流式调用并收集AI回复
     accumulated_response = ""
 
     async def event_generator():
         nonlocal accumulated_response
-        async for event in stream_chat(chat_request, page_cookies=page_cookies_data):
+        async for event in stream_chat(chat_request):
             # 收集AI回复内容
             if event.get("type") == "chunk":
                 content = event.get("content", "")
@@ -470,9 +457,9 @@ async def qa_agent(request: AgentRequest):
         # 流结束后，将AI回复添加到对话历史
         if accumulated_response:
             session.add_message("assistant", accumulated_response)
-            logger.info(
-                f"[QA Agent] 添加AI回复到会话 {request.dialogId}, 长度: {len(accumulated_response)}, 当前消息数: {len(session.messages)}"
-            )
+            # logger.info(
+            #     f"[QA Agent] 添加AI回复到会话 {request.dialogId}, 长度: {len(accumulated_response)}, 当前消息数: {len(session.messages)}"
+            # )
 
     return StreamingResponse(
         event_generator(),
@@ -517,12 +504,9 @@ async def leader_comments_agent(request: AgentRequest):
 
     # 构建内部使用的 ChatRequest
     chat_request = _build_chat_request(request, messages)
-    page_cookies_data = (
-        request.page_cookies.model_dump() if request.page_cookies else None
-    )
 
     async def event_generator():
-        async for event in stream_chat(chat_request, page_cookies=page_cookies_data):
+        async for event in stream_chat(chat_request):
             yield format_sse_event(event)
 
     return StreamingResponse(

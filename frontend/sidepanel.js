@@ -40,19 +40,19 @@ function generateDialogId() {
 // 每个会话(dialogId)对应一个智能体类型
 // 默认智能体：'4' (AI问答智能体)
 const AGENT_TYPES = {
-  SUMMARIZE_PAGE: '1',     // 网页总结
-  REWRITE: '2',            // 文本润色
-  PROOFREAD: '3',          // 文本稽核
-  CHAT: '4',               // AI问答（默认）
+  SUMMARIZE_PAGE: 'ac32fe9431b1444f8ac3cdf42901024e',     // 网页总结
+  REWRITE: 'bbad433949b64fab8de7f1a26d6ab56c',            // 文本润色
+  PROOFREAD: 'a03444b0e45d416fbc0a494b46a2c55b',          // 文本稽核
+  CHAT: 'ddf09cedfcbd4d188adc528461a91392',               // AI问答（默认）
   SUMMARIZE_LEADER: '205a099ade6a4c4fb454e11f96ee6a18',  // 公文批示总结
 };
 
 // ========== 智能体配置 ==========
 const FEATURE_PROMPTS = {
-  summarize: { label: '总结', icon: '📝', agentId: '1' },
-  rewrite: { label: '润色改写', icon: '✨', agentId: '2' },
-  proofread: { label: '稽核检查', icon: '🔍', agentId: '3' },
-  summarizePage: { label: '总结该网页', icon: '📄', agentId: '1' },
+  summarize: { label: '总结', icon: '📝', agentId: 'ac32fe9431b1444f8ac3cdf42901024e' },
+  rewrite: { label: '润色改写', icon: '✨', agentId: 'bbad433949b64fab8de7f1a26d6ab56c' },
+  proofread: { label: '稽核检查', icon: '🔍', agentId: 'a03444b0e45d416fbc0a494b46a2c55b' },
+  summarizePage: { label: '总结该网页', icon: '📄', agentId: 'ac32fe9431b1444f8ac3cdf42901024e' },
   summarizeLeaderComments: { label: '总结领导批示', icon: '👔', agentId: '205a099ade6a4c4fb454e11f96ee6a18' },
 };
 
@@ -79,7 +79,6 @@ let accumulatedText = "";
 let accumulatedThinkText = "";
 let isProcessingPending = false;
 let pageContextCache = null;
-let pageCookiesCache = null;
 let isInThinkBlock = false;
 
 // 流式请求状态
@@ -618,23 +617,24 @@ async function loadConfig() {
  * @returns {Promise<{available: boolean, message: string}>}
  */
 async function checkBackendStatus() {
-  try {
-    const backendUrl = await getBackendUrl();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(`${backendUrl}/api/health`, { 
-      method: 'GET',
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    if (response.ok) {
-      return { available: true, message: '后端服务正常' };
-    }
-    return { available: false, message: '后端服务响应异常' };
-  } catch (e) {
-    console.log('[Sidepanel] 后端状态检查失败:', e.message);
-    return { available: false, message: '无法连接到后端服务，请确认后端已启动' };
-  }
+  // try {
+  //   const backendUrl = await getBackendUrl();
+  //   const controller = new AbortController();
+  //   const timeoutId = setTimeout(() => controller.abort(), 5000);
+  //   const response = await fetch(`${backendUrl}/api/health`, { 
+  //     method: 'GET',
+  //     signal: controller.signal
+  //   });
+  //   clearTimeout(timeoutId);
+  //   if (response.ok) {
+  //     return { available: true, message: '后端服务正常' };
+  //   }
+  //   return { available: false, message: '后端服务响应异常' };
+  // } catch (e) {
+  //   console.log('[Sidepanel] 后端状态检查失败:', e.message);
+  //   return { available: false, message: '无法连接到后端服务，请确认后端已启动' };
+  // }
+  return { available: true, message: '后端服务正常' };
 }
 
 async function saveConfig(newConfig) {
@@ -951,8 +951,7 @@ async function getCurrentPageContext(forceRefresh = false) {
 
 function clearContextCache() {
   pageContextCache = null;
-  pageCookiesCache = null;
-  console.log("[Sidepanel] 上下文和 cookies 缓存已清空");
+  console.log("[Sidepanel] 上下文缓存已清空");
 }
 
 async function getPageCookies() {
@@ -1181,7 +1180,6 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
     keyword: keyword,  // 包含页面上下文（首次）和用户问题，或附加个人信息
     stream: true,
     enable_thinking: enableThinking,
-    page_cookies: {},
   };
 
   console.log('[Sidepanel] 调用智能体:', actualAgentId, 'sessionId:', currentStreamSessionId, 'dialogId:', currentDialogId);
@@ -1195,6 +1193,7 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
       body: requestBodyJson,
       sessionId: currentStreamSessionId,
       dialogId: currentDialogId,
+      
     });
     console.log('[Sidepanel] 智能体请求已发送，等待响应...');
 

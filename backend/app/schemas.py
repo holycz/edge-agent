@@ -1,18 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 
 
 class ChatMessage(BaseModel):
     role: str
     content: str
-
-
-class PageCookies(BaseModel):
-    cookies: Optional[str] = None
-    localStorage: Optional[Dict[str, Any]] = None
-    sessionStorage: Optional[Dict[str, Any]] = None
-    url: Optional[str] = None
-    domain: Optional[str] = None
 
 
 # ========== 智能体统一请求模型 ==========
@@ -32,7 +24,6 @@ class AgentRequest(BaseModel):
     enable_thinking: Optional[bool] = Field(
         default=None, description="是否启用思考模式"
     )
-    page_cookies: Optional[PageCookies] = None
 
 
 class ChatRequest(BaseModel):
@@ -46,4 +37,3 @@ class ChatRequest(BaseModel):
     )
     stream: bool = True
     enable_thinking: Optional[bool] = None
-    page_cookies: Optional[PageCookies] = None

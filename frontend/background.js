@@ -1,4 +1,5 @@
-const BACKEND_URL = "http://localhost:8765";
+const BACKEND_URL = "http://10.142.135.57:8000";
+//const BACKEND_URL = "http://127.0.0.1:8765";
 
 // 存储活动的流式请求控制器，用于中止
 const activeStreams = new Map();
@@ -234,6 +235,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "AuthToken": "badb4c53652e4eb3990cff59db7a0381"
           },
           body: msg.body,
           signal: abortController.signal
@@ -355,7 +357,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         // 处理结束标记
-        if (delta.content === "end#end") {
+        if (delta.content === "end##end") {
           chrome.runtime.sendMessage({
             type: "STREAM_DONE",
             sessionId

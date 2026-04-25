@@ -654,17 +654,6 @@ chrome.runtime.onMessage.addListener((msg, _, res) => {
     console.log('[Content] 返回页面内容，长度:', content.length, '字符，元信息:', metadata);
     return res({ content: content, metadata: metadata });
   }
-  if (msg.type === "GET_PAGE_COOKIES") {
-    console.log('[Content] 收到 GET_PAGE_COOKIES 请求，返回 cookies 和存储信息');
-    const result = {
-      cookies: document.cookie,
-      localStorage: {...localStorage},
-      sessionStorage: {...sessionStorage},
-      url: location.href
-    };
-    console.log('[Content] Cookies 长度:', document.cookie.length, 'localStorage 条目:', Object.keys(localStorage).length, 'sessionStorage 条目:', Object.keys(sessionStorage).length);
-    return res(result);
-  }
 });
 
 // 设置监听
