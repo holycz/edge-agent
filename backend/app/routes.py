@@ -1,14 +1,22 @@
 from typing import List, Optional
 import re
+import os
+import uuid
+import shutil
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse, JSONResponse
 from app.schemas import ChatRequest, AgentRequest, ChatMessage
 from app.ai_client import stream_chat
 from app.config import get_env
 from app.dialog_manager import dialog_manager
 import json
 import logging
+
+# 上传文件存储目录
+UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -190,6 +198,11 @@ def _build_chat_request(
         messages=messages,
         stream=request.stream,
         enable_thinking=request.enable_thinking,
+        # 传递文件引用相关字段
+        referenced_objects=request.referenced_objects,
+        referenced_object_type=request.referenced_object_type,
+        session_id=request.session_id,
+        agent_state=request.agent_state,
     )
 
 
@@ -518,3 +531,191 @@ async def leader_comments_agent(request: AgentRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ========== 文件上传接口（为每个智能体提供独立的上传路径） ==========
+
+# 智能体ID映射
+AGENT_ID_MAPPING = {
+    "ac32fe9431b1444f8ac3cdf42901024e": "ac32fe9431b1444f8ac3cdf42901024e",  # 网页总结
+    "bbad433949b64fab8de7f1a26d6ab56c": "bbad433949b64fab8de7f1a26d6ab56c",  # 文本润色
+    "a03444b0e45d416fbc0a494b46a2c55b": "a03444b0e45d416fbc0a494b46a2c55b",  # 文本稽核
+    "ddf09cedfcbd4d188adc528461a91392": "ddf09cedfcbd4d188adc528461a91392",  # AI问答
+    "205a099ade6a4c4fb454e11f96ee6a18": "205a099ade6a4c4fb454e11f96ee6a18",  # 公文批示总结
+}
+
+
+def _get_agent_id_from_path(path: str) -> str:
+    """从URL路径中提取智能体ID"""
+    # 路径格式: /aisatr_server/sdk/agent/open/{agent_id}/uploadFiles
+    parts = path.split("/")
+    for part in parts:
+        if part in AGENT_ID_MAPPING:
+            return AGENT_ID_MAPPING[part]
+    return AGENT_ID_MAPPING["ddf09cedfcbd4d188adc528461a91392"]  # 默认返回AI问答智能体ID
+
+
+async def _upload_file_to_service(
+    file: UploadFile,
+    request_id: str,
+    agent_id: str,
+    chat_type: str = "save"
+) -> dict:
+    """通用文件上传函数 - 文件存储在本地
+    
+    返回格式:
+    {
+        "code": 0,
+        "message": "文件上传成功",
+        "result": {
+            "fileId": "uuid-string",
+            "fileName": "original_filename.pdf",
+            "filePath": "/path/to/file"
+        }
+    }
+    """
+    try:
+        # 生成唯一的 fileId
+        file_id = str(uuid.uuid4())
+        
+        # 构建存储路径: uploads/{agent_id}/{request_id}/{file_id}_{filename}
+        save_dir = UPLOAD_DIR / agent_id / request_id
+        save_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 安全文件名处理（去除不合法字符）
+        safe_filename = re.sub(r'[^\w\s.-]', '_', file.filename or "unnamed")
+        save_path = save_dir / f"{file_id}_{safe_filename}"
+        
+        # 读取并保存文件内容
+        file_content = await file.read()
+        with open(save_path, "wb") as f:
+            f.write(file_content)
+        
+        file_size = len(file_content)
+        logger.info(f"[FileUpload] 文件上传成功: {file.filename} -> {save_path}, size: {file_size} bytes, agent_id: {agent_id}")
+        
+        # 返回前端需要的格式
+        return {
+            "code": 0,
+            "message": "文件上传成功",
+            "result": {
+                "fileId": file_id,
+                "fileName": file.filename or "unnamed",
+                "filePath": str(save_path),
+                "fileSize": file_size
+            }
+        }
+    except Exception as e:
+        logger.error(f"[FileUpload] 文件保存失败: {str(e)}")
+        raise
+
+
+@router.post("/aisatr_server/sdk/agent/open/ac32fe9431b1444f8ac3cdf42901024e/uploadFiles")
+async def upload_files_summarize(
+    files: UploadFile = File(...),
+    request_id: str = Form(..., alias="request_id"),
+    chat_type: str = Form(default="save", alias="chat_type"),
+):
+    """网页总结智能体 - 文件上传接口
+    
+    请求示例:
+    POST /aisatr_server/sdk/agent/open/ac32fe9431b1444f8ac3cdf42901024e/uploadFiles
+    Content-Type: multipart/form-data
+    
+    form-data:
+    - files: 文件
+    - request_id: 请求流水号
+    - chat_type: save（默认）
+    
+    文件保存到本地: backend/uploads/{agent_id}/{request_id}/
+    """
+    agent_id = AGENT_ID_MAPPING["ac32fe9431b1444f8ac3cdf42901024e"]
+    try:
+        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
+        return JSONResponse(content=result, status_code=200)
+    except Exception as e:
+        logger.error(f"[FileUpload] 失败: {str(e)}")
+        return JSONResponse(
+            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
+            status_code=500,
+        )
+
+
+@router.post("/aisatr_server/sdk/agent/open/bbad433949b64fab8de7f1a26d6ab56c/uploadFiles")
+async def upload_files_rewrite(
+    files: UploadFile = File(...),
+    request_id: str = Form(..., alias="request_id"),
+    chat_type: str = Form(default="save", alias="chat_type"),
+):
+    """文本润色智能体 - 文件上传接口"""
+    agent_id = AGENT_ID_MAPPING["bbad433949b64fab8de7f1a26d6ab56c"]
+    try:
+        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
+        return JSONResponse(content=result, status_code=200)
+    except Exception as e:
+        logger.error(f"[FileUpload] 失败: {str(e)}")
+        return JSONResponse(
+            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
+            status_code=500,
+        )
+
+
+@router.post("/aisatr_server/sdk/agent/open/a03444b0e45d416fbc0a494b46a2c55b/uploadFiles")
+async def upload_files_proofread(
+    files: UploadFile = File(...),
+    request_id: str = Form(..., alias="request_id"),
+    chat_type: str = Form(default="save", alias="chat_type"),
+):
+    """文本稽核智能体 - 文件上传接口"""
+    agent_id = AGENT_ID_MAPPING["a03444b0e45d416fbc0a494b46a2c55b"]
+    try:
+        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
+        return JSONResponse(content=result, status_code=200)
+    except Exception as e:
+        logger.error(f"[FileUpload] 失败: {str(e)}")
+        return JSONResponse(
+            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
+            status_code=500,
+        )
+
+
+@router.post("/aisatr_server/sdk/agent/open/ddf09cedfcbd4d188adc528461a91392/uploadFiles")
+async def upload_files_qa(
+    files: UploadFile = File(...),
+    request_id: str = Form(..., alias="request_id"),
+    chat_type: str = Form(default="save", alias="chat_type"),
+):
+    """AI问答智能体 - 文件上传接口（默认智能体）
+    
+    这是主要使用的文件上传接口，支持文件问答功能。
+    文件保存到本地: backend/uploads/{agent_id}/{request_id}/
+    """
+    agent_id = AGENT_ID_MAPPING["ddf09cedfcbd4d188adc528461a91392"]
+    try:
+        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
+        return JSONResponse(content=result, status_code=200)
+    except Exception as e:
+        logger.error(f"[FileUpload] 失败: {str(e)}")
+        return JSONResponse(
+            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
+            status_code=500,
+        )
+
+
+@router.post("/aisatr_server/sdk/agent/open/205a099ade6a4c4fb454e11f96ee6a18/uploadFiles")
+async def upload_files_leader_comments(
+    files: UploadFile = File(...),
+    request_id: str = Form(..., alias="request_id"),
+    chat_type: str = Form(default="save", alias="chat_type"),
+):
+    """公文批示总结智能体 - 文件上传接口"""
+    agent_id = AGENT_ID_MAPPING["205a099ade6a4c4fb454e11f96ee6a18"]
+    try:
+        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
+        return JSONResponse(content=result, status_code=200)
+    except Exception as e:
+        logger.error(f"[FileUpload] 失败: {str(e)}")
+        return JSONResponse(
+            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
+            status_code=500,
+        )

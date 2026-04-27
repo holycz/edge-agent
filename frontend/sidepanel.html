@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 问答助手</title>
+  <title>移点通 - 智能助手</title>
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <!-- 左侧边栏：会话列表 -->
     <div class="ai-sidebar-left collapsed" id="ai-sidebar-left">
       <div class="ai-sidebar-left-header">
-        <span class="ai-sidebar-left-title">会话列表</span>
+        <span class="ai-sidebar-left-title">💬 会话列表</span>
         <button class="ai-sidebar-left-btn ai-new-session-btn" title="新建会话">➕</button>
       </div>
       <div class="ai-session-list" id="ai-session-list">
@@ -31,7 +31,7 @@
       <div class="ai-header">
         <div class="ai-header-left">
           <button class="ai-toggle-sidebar" id="ai-toggle-sidebar" title="展开/收起会话列表">☰</button>
-          <span class="ai-title">AI 问答助手</span>
+          <span class="ai-title">移点通</span>
           <span class="ai-session-title" id="ai-session-title"></span>
         </div>
         <div class="ai-header-actions">
@@ -48,10 +48,27 @@
         <!-- 输入区域 -->
         <div class="ai-input-bar">
           <div class="ai-input-wrapper">
+            <!-- 文件预览区域 -->
+            <div class="ai-file-preview" id="ai-file-preview" style="display: none;">
+              <div class="ai-file-item" id="ai-file-item">
+                <span class="ai-file-icon">📄</span>
+                <span class="ai-file-name" id="ai-file-name">文件名</span>
+                <button class="ai-file-remove" id="ai-file-remove" title="移除文件">×</button>
+              </div>
+              <!-- 上传进度条 -->
+              <div class="ai-upload-progress" id="ai-upload-progress" style="display: none;">
+                <div class="ai-upload-progress-bar" id="ai-upload-progress-bar"></div>
+                <span class="ai-upload-progress-text" id="ai-upload-progress-text">0%</span>
+              </div>
+              <!-- 上传状态提示 -->
+              <div class="ai-upload-status" id="ai-upload-status"></div>
+            </div>
             <textarea class="ai-input" id="ai-input" placeholder="输入问题，按回车发送..."></textarea>
             <div class="ai-input-toolbar">
               <div class="ai-input-left-actions">
                 <button class="ai-prompt-library-btn" id="ai-prompt-library-btn" title="提示词库">📋</button>
+                <button class="ai-upload-file-btn" id="ai-upload-file-btn" title="上传文件">📎</button>
+                <input type="file" id="ai-file-input" style="display: none;" multiple>
               </div>
               <button class="ai-send" id="ai-send">发送</button>
             </div>

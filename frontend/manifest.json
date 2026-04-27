@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI划词问答助手",
+  "name": "移点通",
   "version": "1.0",
-  "description": "划词问答、改写、总结、页面对话，带流式输出",
+  "description": "陕西移动智能划词问答助手 - 润色、稽核、总结、AI对话",
   "permissions": ["contextMenus", "activeTab", "scripting", "storage", "sidePanel", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -25,6 +25,6 @@
     }
   ],
   "action": {
-    "default_title": "打开 AI 问答助手"
+    "default_title": "打开 移点通"
   }
 }

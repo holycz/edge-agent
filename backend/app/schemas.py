@@ -24,6 +24,19 @@ class AgentRequest(BaseModel):
     enable_thinking: Optional[bool] = Field(
         default=None, description="是否启用思考模式"
     )
+    # 文件引用相关字段
+    referenced_objects: Optional[str] = Field(
+        default=None, description="引用对象，JSON格式，如：{file: [{fileId: 'xxx'}]}"
+    )
+    referenced_object_type: Optional[str] = Field(
+        default=None, description="引用对象类型，如：file"
+    )
+    session_id: Optional[str] = Field(
+        default=None, description="会话ID，用于关联文件"
+    )
+    agent_state: Optional[str] = Field(
+        default=None, description="智能体状态，如：save"
+    )
 
 
 class ChatRequest(BaseModel):
@@ -37,3 +50,16 @@ class ChatRequest(BaseModel):
     )
     stream: bool = True
     enable_thinking: Optional[bool] = None
+    # 文件引用相关字段
+    referenced_objects: Optional[str] = Field(
+        default=None, description="引用对象，JSON格式，如：{file: [{fileId: 'xxx'}]}"
+    )
+    referenced_object_type: Optional[str] = Field(
+        default=None, description="引用对象类型，如：file"
+    )
+    session_id: Optional[str] = Field(
+        default=None, description="会话ID，用于关联文件"
+    )
+    agent_state: Optional[str] = Field(
+        default=None, description="智能体状态，如：save"
+    )

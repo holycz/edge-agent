@@ -94,6 +94,16 @@ def _build_request_body(request: ChatRequest, model: str, config) -> Dict[str, A
         "chat_template_kwargs": {"enable_thinking": False},
     }
 
+    # 添加文件引用相关参数
+    if request.referenced_objects:
+        body["referenced_objects"] = request.referenced_objects
+    if request.referenced_object_type:
+        body["referenced_object_type"] = request.referenced_object_type
+    if request.session_id:
+        body["session_id"] = request.session_id
+    if request.agent_state:
+        body["agent_state"] = request.agent_state
+
     return body
 
 

@@ -31,7 +31,7 @@ async function createContextMenus() {
 
   chrome.contextMenus.create({
     id: "ai-open-panel",
-    title: "💬 打开 AI 侧边栏",
+    title: "💬 打开 移点通 侧边栏",
     contexts: ["page"]
   });
   chrome.contextMenus.create({
@@ -406,6 +406,69 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
 
     return true;
+  }
+
+  // 处理文件上传请求
+  if (msg.type === "UPLOAD_FILE") {
+    (async () => {
+      try {
+        console.log("[Background] 收到文件上传请求, requestId:", msg.requestId);
+        
+        // 将 Array 转回 Uint8Array 再转 Blob
+        const uint8Array = new Uint8Array(msg.fileData);
+        const blob = new Blob([uint8Array], { type: msg.fileType });
+        
+        // 构建 FormData
+        const formData = new FormData();
+        formData.append("files", blob, msg.fileName);
+        formData.append("request_id", msg.requestId);
+        formData.append("agent_id", msg.agentId);
+        formData.append("chat_type", "save");
+        
+        // 发送请求到后端
+        const response = await fetch(`${BACKEND_URL}/aisatr_server/sdk/agent/uploadFiles`, {
+          method: "POST",
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("[Background] 文件上传失败:", response.status, errorText);
+          sendResponse({ 
+            success: false, 
+            error: `上传失败: ${response.status}` 
+          });
+          return;
+        }
+        
+        const result = await response.json();
+        console.log("[Background] 文件上传响应:", result);
+        
+        if (result.code === 1000 && result.data && result.data.length > 0) {
+          sendResponse({
+            success: true,
+            files: result.data.map(file => ({
+              fileId: file.fileId,
+              imgUrl: file.imgUrl
+            }))
+          });
+        } else {
+          sendResponse({
+            success: false,
+            error: result.message || "上传失败",
+            code: result.code
+          });
+        }
+      } catch (e) {
+        console.error("[Background] 文件上传异常:", e);
+        sendResponse({
+          success: false,
+          error: `上传异常: ${e.message}`
+        });
+      }
+    })();
+    
+    return true; // 保持通道开放以便异步响应
   }
 
   return false;

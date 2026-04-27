@@ -53,7 +53,7 @@ edge-agent/
 | ac32fe9431b1444f8ac3cdf42901024e | `/sxzypt/scene_gateway/agent/open/ac32fe9431b1444f8ac3cdf42901024e` | 网页总结智能体 | 未选中文本时点击「总结该网页」 |
 | bbad433949b64fab8de7f1a26d6ab56c | `/sxzypt/scene_gateway/agent/open/bbad433949b64fab8de7f1a26d6ab56c` | 文本润色智能体 | 选中文本时点击「润色改写」 |
 | a03444b0e45d416fbc0a494b46a2c55b | `/sxzypt/scene_gateway/agent/open/a03444b0e45d416fbc0a494b46a2c55b` | 文本稽核智能体 | 选中文本时点击「稽核检查」 |
-| ddf09cedfcbd4d188adc528461a91392 | `/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392` | AI问答智能体 | 页面对话输入问题 |
+| ddf09cedfcbd4d188adc528461a91392 | `/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392` | AI问答智能体（支持文件问答） | 页面对话输入问题 |
 | 205a099ade6a4c4fb454e11f96ee6a18 | `/sxzypt/scene_gateway/agent/open/205a099ade6a4c4fb454e11f96ee6a18` | 公文批示总结智能体 | 未选中文本时点击「总结领导批示」 |
 
 **注意**：
@@ -90,6 +90,7 @@ MODEL=qwen/qwen3-next-80b-a3b-instruct
 MY_NAME=                     # 用于总结领导批示时识别
 OTHER_INFO=                  # 额外个人身份信息
 PORT=8765
+FILE_UPLOAD_URL=http://124.225.137.100:8101/aistar_server/sdk/agent/uploadFiles  # 文件上传服务地址
 ```
 
 ### 3.4 流式事件格式

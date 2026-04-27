@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
     "API_URL": "https://integrate.api.nvidia.com/v1",
     "MODEL": "qwen/qwen3-next-80b-a3b-instruct",
     "PORT": 8765,
+    "FILE_UPLOAD_URL": "http://124.225.137.100:8101/aistar_server/sdk/agent/uploadFiles",
 }
 
 # 内部状态
@@ -35,6 +36,7 @@ def _load_env_config() -> None:
         "API_URL": os.getenv("API_URL", DEFAULT_CONFIG["API_URL"]),
         "MODEL": os.getenv("MODEL", DEFAULT_CONFIG["MODEL"]),
         "PORT": int(os.getenv("PORT", str(DEFAULT_CONFIG["PORT"]))),
+        "FILE_UPLOAD_URL": os.getenv("FILE_UPLOAD_URL", DEFAULT_CONFIG["FILE_UPLOAD_URL"]),
     }
 
 
