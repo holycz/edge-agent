@@ -1,8 +1,116 @@
-const BACKEND_URL = "http://10.142.135.57:8000";
-//const BACKEND_URL = "http://127.0.0.1:8765";
+// 候选后端URL列表，按优先级排序
+const CANDIDATE_URLS = [
+  "http://127.0.0.1:8765",
+  "http://10.142.135.57:8000",
+  "http://10.131.228.131:40002"
+];
+
+// 当前使用的后端URL，初始为空，会通过测试动态确定
+let CURRENT_BACKEND_URL = null;
 
 // 存储活动的流式请求控制器，用于中止
 const activeStreams = new Map();
+
+// 测试单个URL是否可用（使用实际存在的智能体接口进行测试）
+async function testBackendUrl(url) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
+
+    // 使用 AI 问答智能体接口进行测试，发送一个空的测试请求
+    const response = await fetch(`${url}/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        requestId: "test-" + Date.now(),
+        dialogId: "test-" + Date.now(),
+        keyword: "test"
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    // 只要能成功发起请求（返回任意HTTP状态），就认为URL可用
+    // 即使是401/500错误，也说明服务器在运行
+    if (response.status !== 0) {
+      console.log(`[Background] URL可用: ${url} (状态码: ${response.status})`);
+      return true;
+    }
+  } catch (e) {
+    // 请求失败，URL不可用（连接超时、拒绝连接等）
+    console.log(`[Background] URL测试失败: ${url}`, e.message);
+  }
+  return false;
+}
+
+// 测试所有候选URL，返回第一个可用的URL（并发测试，哪个先通用哪个）
+async function findAvailableBackendUrl() {
+  console.log("[Background] 开始测试后端连接...");
+  console.log("[Background] 候选URL:", CANDIDATE_URLS);
+
+  // 先检查存储中是否有之前成功连接的URL
+  try {
+    const stored = await chrome.storage.local.get("backendUrl");
+    if (stored.backendUrl) {
+      console.log("[Background] 检查存储的URL:", stored.backendUrl);
+      const isAvailable = await testBackendUrl(stored.backendUrl);
+      if (isAvailable) {
+        console.log("[Background] 使用存储的可用URL:", stored.backendUrl);
+        CURRENT_BACKEND_URL = stored.backendUrl;
+        return stored.backendUrl;
+      }
+    }
+  } catch (e) {
+    console.log("[Background] 读取存储的URL失败:", e.message);
+  }
+
+  // 并发测试所有URL，使用 Promise.race 获取第一个成功的
+  return new Promise((resolve) => {
+    let completedCount = 0;
+    let foundUrl = null;
+
+    const checkComplete = () => {
+      completedCount++;
+      // 如果所有测试都完成了还没找到可用的，使用第一个默认值
+      if (completedCount === CANDIDATE_URLS.length && !foundUrl) {
+        console.warn("[Background] 所有URL都不可用，使用默认URL:", CANDIDATE_URLS[0]);
+        CURRENT_BACKEND_URL = CANDIDATE_URLS[0];
+        resolve(CANDIDATE_URLS[0]);
+      }
+    };
+
+    // 为每个URL创建一个可取消的测试 Promise
+    CANDIDATE_URLS.forEach((url) => {
+      (async () => {
+        try {
+          const isAvailable = await testBackendUrl(url);
+          if (isAvailable && !foundUrl) {
+            // 第一个成功的URL
+            foundUrl = url;
+            console.log("[Background] 找到可用URL:", url);
+            CURRENT_BACKEND_URL = url;
+            // 存储到本地
+            await chrome.storage.local.set({ backendUrl: url });
+            resolve(url);
+          }
+        } finally {
+          checkComplete();
+        }
+      })();
+    });
+  });
+}
+
+// 获取当前后端URL（如果还没测试过，会触发测试）
+async function getBackendUrl() {
+  if (CURRENT_BACKEND_URL) {
+    return CURRENT_BACKEND_URL;
+  }
+  return await findAvailableBackendUrl();
+}
 
 async function createContextMenus() {
   await chrome.contextMenus.removeAll();
@@ -44,21 +152,45 @@ async function createContextMenus() {
     title: "👔 总结领导批示",
     contexts: ["page"]
   });
+  chrome.contextMenus.create({
+    id: "ai-page-rewrite",
+    title: "✨ 文本润色",
+    contexts: ["page"]
+  });
+  chrome.contextMenus.create({
+    id: "ai-page-proofread",
+    title: "🔍 文本稽核",
+    contexts: ["page"]
+  });
+  chrome.contextMenus.create({
+    id: "ai-page-ask",
+    title: "💬 AI问答",
+    contexts: ["page"]
+  });
 
   console.log("[Background] 右键菜单创建完成");
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("[Background] 扩展已安装/更新，创建菜单...");
+// 扩展启动时执行的操作
+async function onExtensionStartup() {
+  console.log("[Background] 扩展已启动，测试后端连接...");
+  await findAvailableBackendUrl();
+  console.log("[Background] 后端URL已确定:", CURRENT_BACKEND_URL);
   createContextMenus();
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  console.log("[Background] 扩展已安装/更新...");
+  onExtensionStartup();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  console.log("[Background] 扩展已启动，创建菜单...");
-  createContextMenus();
+  console.log("[Background] 扩展已启动...");
+  onExtensionStartup();
 });
 
-createContextMenus();
+// 立即执行启动逻辑
+onExtensionStartup();
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   console.log("[Background] ====== 菜单被点击 ======");
@@ -108,6 +240,21 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     console.log("[Background] 匹配到总结领导批示菜单");
     action = "summarizeLeaderComments";
     prompt = "请分析并总结当前网页中的领导批示内容";
+  }
+  if (info.menuItemId === "ai-page-rewrite") {
+    console.log("[Background] 匹配到页面润色菜单");
+    action = "pageRewrite";
+    prompt = "请对当前网页的文本内容进行润色改写，保持原意但让表达更流畅、专业";
+  }
+  if (info.menuItemId === "ai-page-proofread") {
+    console.log("[Background] 匹配到页面稽核菜单");
+    action = "pageProofread";
+    prompt = "请对当前网页的文本进行稽核检查，找出语句不通顺的地方和错别字";
+  }
+  if (info.menuItemId === "ai-page-ask") {
+    console.log("[Background] 匹配到页面AI问答菜单");
+    action = "pageAsk";
+    prompt = "请基于当前网页内容进行AI问答";
   }
 
   console.log("[Background] 处理后的 action:", action);
@@ -195,8 +342,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "GET_BACKEND_URL") {
-    sendResponse({ url: BACKEND_URL });
-    return true;
+    (async () => {
+      const url = await getBackendUrl();
+      sendResponse({ url });
+    })();
+    return true; // 保持通道开放以便异步响应
   }
 
   if (msg.type === "ABORT_STREAM") {
@@ -229,9 +379,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       activeStreams.set(sessionId, abortController);
 
       try {
+        // 获取当前可用的后端URL
+        const backendUrl = await getBackendUrl();
+        console.log("[Background] 使用后端URL:", backendUrl);
+
         // 使用前端指定的 endpoint，默认使用 AI问答智能体
-      const endpoint = msg.endpoint || "/sxzypt/scene_gateway/agent/open/4";
-      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        const endpoint = msg.endpoint || "/sxzypt/scene_gateway/agent/open/4";
+        const res = await fetch(`${backendUrl}${endpoint}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -395,9 +549,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }).catch(() => {});
         } else {
           console.error("[Background] 后端请求异常:", e);
+          const currentUrl = CURRENT_BACKEND_URL || "未知";
           chrome.runtime.sendMessage({
             type: "STREAM_ERROR",
-            error: `后端连接失败: ${e.message}。请确保后端服务已启动 (${BACKEND_URL})`,
+            error: `后端连接失败: ${e.message}。请确保后端服务已启动 (${currentUrl})`,
             sessionId
           }).catch(() => {});
         }
@@ -424,9 +579,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         formData.append("request_id", msg.requestId);
         formData.append("agent_id", msg.agentId);
         formData.append("chat_type", "save");
-        
-        // 发送请求到后端
-        const response = await fetch(`${BACKEND_URL}/aisatr_server/sdk/agent/uploadFiles`, {
+
+        // 获取当前可用的后端URL
+        const backendUrl = await getBackendUrl();
+
+        // 发送请求到后端，使用 agentId 构建正确路径
+        const response = await fetch(`${backendUrl}/aisatr_server/sdk/agent/open/${msg.agentId}/uploadFiles`, {
           method: "POST",
           body: formData,
         });
@@ -444,13 +602,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const result = await response.json();
         console.log("[Background] 文件上传响应:", result);
         
-        if (result.code === 1000 && result.data && result.data.length > 0) {
+        // 后端返回 code 为 0 表示成功，兼容 1000 也作为成功标识
+        if ((result.code === 0 || result.code === 1000) && result.result) {
+          const uploadedFile = result.result;
           sendResponse({
             success: true,
-            files: result.data.map(file => ({
-              fileId: file.fileId,
-              imgUrl: file.imgUrl
-            }))
+            files: [{
+              fileId: uploadedFile.fileId,
+              imgUrl: null,  // 本地存储没有imgUrl，fileId作为唯一标识
+              fileName: uploadedFile.fileName,
+              fileSize: uploadedFile.fileSize
+            }]
           });
         } else {
           sendResponse({

@@ -12,7 +12,6 @@
     <div class="ai-sidebar-left collapsed" id="ai-sidebar-left">
       <div class="ai-sidebar-left-header">
         <span class="ai-sidebar-left-title">💬 会话列表</span>
-        <button class="ai-sidebar-left-btn ai-new-session-btn" title="新建会话">➕</button>
       </div>
       <div class="ai-session-list" id="ai-session-list">
         <!-- 会话列表项将动态生成 -->
@@ -201,6 +200,55 @@
       <div class="ai-config-actions">
         <button class="ai-config-save">保存</button>
         <button class="ai-config-reset">恢复默认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 智能体选择弹窗 -->
+  <div class="ai-agent-modal" id="ai-agent-modal" style="display: none;">
+    <div class="ai-agent-modal-content">
+      <div class="ai-agent-modal-header">
+        <span>选择智能体类型</span>
+        <span class="ai-agent-modal-close">×</span>
+      </div>
+      <div class="ai-agent-modal-body">
+        <div class="ai-agent-list">
+          <div class="ai-agent-item" data-agent="ddf09cedfcbd4d188adc528461a91392">
+            <span class="ai-agent-icon">💬</span>
+            <div class="ai-agent-info">
+              <div class="ai-agent-name">AI 问答</div>
+              <div class="ai-agent-desc">通用AI对话，支持文件问答</div>
+            </div>
+          </div>
+          <div class="ai-agent-item" data-agent="bbad433949b64fab8de7f1a26d6ab56c">
+            <span class="ai-agent-icon">✨</span>
+            <div class="ai-agent-info">
+              <div class="ai-agent-name">文本润色</div>
+              <div class="ai-agent-desc">优化文字表达，提升流畅度和专业性</div>
+            </div>
+          </div>
+          <div class="ai-agent-item" data-agent="a03444b0e45d416fbc0a494b46a2c55b">
+            <span class="ai-agent-icon">🔍</span>
+            <div class="ai-agent-info">
+              <div class="ai-agent-name">文本稽核</div>
+              <div class="ai-agent-desc">检查错别字、语句通顺和格式问题</div>
+            </div>
+          </div>
+          <div class="ai-agent-item" data-agent="ac32fe9431b1444f8ac3cdf42901024e">
+            <span class="ai-agent-icon">📄</span>
+            <div class="ai-agent-info">
+              <div class="ai-agent-name">网页总结</div>
+              <div class="ai-agent-desc">提炼网页核心要点，生成简洁摘要</div>
+            </div>
+          </div>
+          <div class="ai-agent-item" data-agent="205a099ade6a4c4fb454e11f96ee6a18">
+            <span class="ai-agent-icon">👔</span>
+            <div class="ai-agent-info">
+              <div class="ai-agent-name">公文批示总结</div>
+              <div class="ai-agent-desc">分析OA审批意见，总结领导批示要点</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

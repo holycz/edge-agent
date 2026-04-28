@@ -141,6 +141,23 @@ function extractIframeContent(collectedContent = []) {
   return collectedContent;
 }
 
+// OA系统正文内容选择器（公文正文区域）
+const OA_BODY_SELECTORS = [
+  '.wf-req-content', '.req-content', '.doc-content',
+  '.document-content', '.doc-body', '.document-body',
+  '[class*="req-content"]', '[class*="doc-content"]',
+  '[class*="document-body"]', '[class*="main-content"]',
+  '.wf-detail-content', '.detail-content',
+  '.form-content', '.form-body',
+  '.jdf-doc-editor', '.doc-editor-body',
+  '.edoc-body', '.edoc-content',
+  '#contentBody', '#docBody', '#mainBody',
+  '.km-doc-content', '.km-document-body',
+  '[class*="body-text"]', '[class*="content-text"]',
+  '. RichtextContent', '.rich-text-content',
+  '.text-content', '.article-content'
+];
+
 // OA系统审批意见相关选择器
 const APPROVAL_COMMENT_SELECTORS = [
   '.wf-reqcomments-detail', '.req-comments-detail',
@@ -542,6 +559,89 @@ function extractSpecialSiteSmartContent() {
   return '';
 }
 
+// 获取公文批示专用内容（只提取正文 + 领导批示，不含页面其他信息）
+function getApprovalPageContent() {
+  console.log('[Content] ========== 开始获取公文批示专用内容 ==========');
+
+  const parts = [];
+
+  // 1. 提取正文内容
+  let bodyContent = '';
+  for (const selector of OA_BODY_SELECTORS) {
+    try {
+      const el = document.querySelector(selector);
+      if (el) {
+        bodyContent = getAllContentFromElement(el);
+        if (bodyContent && bodyContent.length > 20) {
+          console.log('[Content] 提取正文内容（选择器:', selector, '），长度:', bodyContent.length);
+          break;
+        }
+        bodyContent = '';
+      }
+    } catch (e) {}
+  }
+
+  // 如果没找到专用正文选择器，尝试从富文本编辑器提取
+  if (!bodyContent) {
+    for (const selector of RICH_EDITOR_SELECTORS) {
+      try {
+        const el = document.querySelector(selector);
+        if (el) {
+          bodyContent = getAllContentFromElement(el);
+          if (bodyContent && bodyContent.length > 20) {
+            console.log('[Content] 提取正文内容（富文本编辑器:', selector, '），长度:', bodyContent.length);
+            break;
+          }
+          bodyContent = '';
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (bodyContent) {
+    parts.push('【正文内容】\n' + bodyContent);
+  }
+
+  // 2. 提取领导批示/审批意见
+  const approvalComments = [];
+  extractApprovalComments(approvalComments);
+  if (approvalComments.length > 0) {
+    const commentsText = approvalComments
+      .map(c => c.content)
+      .join('\n---\n');
+    parts.push('【领导批示/审批意见】\n' + commentsText);
+  }
+
+  // 3. 提取折叠面板中的审批相关信息
+  const collapsibleContent = [];
+  extractCollapsibleContent(collapsibleContent);
+  const approvalCollapsible = collapsibleContent.filter(c =>
+    c.title && (
+      /审批|意见|批示|签批|审核|办理/.test(c.title) ||
+      /正文|内容|详情/.test(c.title)
+    )
+  );
+  if (approvalCollapsible.length > 0) {
+    const collapsibleText = approvalCollapsible
+      .map(c => `[${c.title}]\n${c.content}`)
+      .join('\n---\n');
+    // 避免与已提取的内容重复
+    const existingText = parts.join('');
+    if (!existingText.includes(collapsibleText.substring(0, 200))) {
+      parts.push('【审批相关面板】\n' + collapsibleText);
+    }
+  }
+
+  if (parts.length === 0) {
+    console.log('[Content] 未提取到公文批示专用内容，返回空');
+    return '';
+  }
+
+  const result = parts.join('\n\n');
+  console.log('[Content] 公文批示专用内容总长度:', result.length, '字符');
+  return result;
+}
+
 // 获取页面内容（简化版 - 只提取主体内容）
 function getPageContent() {
   console.log('[Content] ========== 开始获取页面内容（简化模式 - 只提取主体） ==========');
@@ -652,6 +752,13 @@ chrome.runtime.onMessage.addListener((msg, _, res) => {
     const content = getPageContent();
     const metadata = getPageMetadata();
     console.log('[Content] 返回页面内容，长度:', content.length, '字符，元信息:', metadata);
+    return res({ content: content, metadata: metadata });
+  }
+  if (msg.type === "GET_APPROVAL_PAGE_CONTENT") {
+    console.log('[Content] 收到 GET_APPROVAL_PAGE_CONTENT 请求，开始获取公文批示专用内容...');
+    const content = getApprovalPageContent();
+    const metadata = getPageMetadata();
+    console.log('[Content] 返回公文批示专用内容，长度:', content.length, '字符');
     return res({ content: content, metadata: metadata });
   }
 });

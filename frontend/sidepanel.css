@@ -1753,3 +1753,113 @@ html, body {
 #ai-import-file-input {
   display: none;
 }
+
+/* ==================== 智能体选择弹窗 ==================== */
+.ai-agent-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-agent-modal-content {
+  width: 90%;
+  max-width: 420px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.25);
+  animation: modalIn 0.2s ease;
+}
+
+.ai-agent-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #2d81ff 0%, #1a6fd9 100%);
+  color: white;
+  border-radius: 16px 16px 0 0;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.ai-agent-modal-close {
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0.9;
+  transition: opacity 0.2s;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.ai-agent-modal-close:hover {
+  opacity: 1;
+  background: rgba(255,255,255,0.2);
+}
+
+.ai-agent-modal-body {
+  padding: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.ai-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-agent-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 2px solid #e8e8e8;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #f8f9fa;
+}
+
+.ai-agent-item:hover {
+  border-color: #2d81ff;
+  background: #f0f7ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(45, 129, 255, 0.15);
+}
+
+.ai-agent-icon {
+  font-size: 32px;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.ai-agent-info {
+  flex: 1;
+}
+
+.ai-agent-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.ai-agent-desc {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
