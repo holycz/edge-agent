@@ -320,6 +320,8 @@ async def unified_agent(request: AgentRequest):
 
     # ====================== 【新增：读取上传的 TXT 文件】 ======================
     file_content = ""
+    logger.info(f"[question] : {request.referenced_object_type}， {request.referenced_objects}")
+    print(request.referenced_object_type)
     try:
         # 仅当类型为 file 且有文件信息时读取
         if request.referenced_object_type == "file" and request.referenced_objects:
@@ -331,12 +333,14 @@ async def unified_agent(request: AgentRequest):
                 file_id = file_info.get("file_id", "")
                 file_name = file_info.get("file_name", "")
                 request_id = request.request_id
+                dialog_id = request.dialog_id
 
                 if not file_id or not request_id:
                     logger.warning("[FileRead] file_id 或 request_id 为空")
                 else:
                     # 拼接上传时的路径：uploads/agent_id/request_id/file_id_filename
-                    target_dir = UPLOAD_DIR / agent_id / request_id
+                    target_dir = UPLOAD_DIR / agent_id / dialog_id
+                    logger.info(f"[target_dir] : {target_dir}")
                     # 遍历目录找到以 file_id 开头的文件（匹配上传规则）
                     if target_dir.exists():
                         for file_path in target_dir.glob(f"{file_id}_*"):
@@ -349,6 +353,8 @@ async def unified_agent(request: AgentRequest):
             if file_content:
                 # 把文件内容拼到问题前面
                 question = f"以下是上传的文件内容：\n{file_content}\n\n用户问题：{question}"
+                logger.info(f"[question] : {question}")
+
     except Exception as e:
         logger.error(f"[FileRead] 读取文件失败：{str(e)}")
     # ==========================================================================
@@ -483,7 +489,7 @@ async def upload_files(
         file_uuid = uuid.uuid4().hex
 
         # 构建存储路径: uploads/{agent_id}/{request_id}/{file_uuid}_{filename}
-        save_dir = UPLOAD_DIR / agent_id / request_id
+        save_dir = UPLOAD_DIR / agent_id / dialog_id
         save_dir.mkdir(parents=True, exist_ok=True)
 
         # 安全文件名处理

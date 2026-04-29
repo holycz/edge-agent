@@ -59,6 +59,23 @@ const FEATURE_PROMPTS = {
   pageAsk: { label: '网页AI问答', icon: '💬', agentId: 'ddf09cedfcbd4d188adc528461a91392' },
 };
 
+function getAgentLabel(agentType) {
+  if (agentType === AGENT_TYPES.CHAT) return 'AI问答';
+  if (agentType === AGENT_TYPES.SUMMARIZE_PAGE) return '网页总结';
+  if (agentType === AGENT_TYPES.REWRITE) return '文本润色';
+  if (agentType === AGENT_TYPES.PROOFREAD) return '文本稽核';
+  if (agentType === AGENT_TYPES.SUMMARIZE_LEADER) return '批示总结';
+  return 'AI问答';
+}
+
+function updateHeaderTitle() {
+  const titleEl = document.querySelector('.ai-title');
+  if (!titleEl) return;
+  const session = SessionManager.getCurrentSession();
+  const agentType = session?.agentType || AGENT_TYPES.CHAT;
+  titleEl.textContent = getAgentLabel(agentType);
+}
+
 // ========== 内置提示词模板 ==========
 const BUILT_IN_PROMPTS = [
   { id: 'builtin_1', title: '💻 解释代码', content: '请详细解释这段代码的功能、逻辑和关键实现细节：\n\n{{selection}}', icon: '💻', isBuiltIn: true },
@@ -420,16 +437,19 @@ async function init() {
       if (session && session.messages.length > 0) {
         conversationHistory = [...session.messages];
         renderConversationHistory();
+        updateHeaderTitle();
         console.log("[Sidepanel] 恢复会话:", session.title, "消息数:", session.messages.length);
       } else {
         // 创建新会话（默认AI问答）
         SessionManager.createSession('新会话', AGENT_TYPES.CHAT);
         renderSessionList();
+        updateHeaderTitle();
       }
     } else {
       // 没有当前会话，创建新会话
       SessionManager.createSession('新会话');
       renderSessionList();
+      updateHeaderTitle();
     }
 
     console.log("[Sidepanel] 初始化完成，检查待处理问题...");
@@ -489,6 +509,7 @@ async function checkPendingQuestion() {
           conversationHistory = [];
           SessionManager.createSession(feature.label, feature.agentId);
           renderSessionList();
+          updateHeaderTitle();
           inputTextarea.focus();
           showToast(`已切换到${feature.label}对话`);
           console.log("[Sidepanel] 仅创建会话，等待用户输入:", feature.label);
@@ -507,6 +528,7 @@ async function checkPendingQuestion() {
           conversationHistory.push({ role: 'user', content: `${feature.icon} ${feature.label}：「${shortText}」` });
           SessionManager.saveCurrentSessionMessages();
           renderSessionList();
+          updateHeaderTitle();
           
           // 调用智能体，传递 dialogId 以支持在该对话框中继续对话
           await callAgent(feature.agentId, selectedText, false, {}, newSession.dialogId, false);
@@ -564,6 +586,7 @@ async function handlePageAction(action) {
   newSession.pageContext = pageContext;
   SessionManager.saveCurrentSessionMessages();
   renderSessionList();
+  updateHeaderTitle();
 
   // 添加用户消息到新会话
   addMessage('user', `${feature.icon} ${feature.label}`);
@@ -804,9 +827,6 @@ async function sendMessage() {
   conversationHistory.push({ role: 'user', content: displayText });
   SessionManager.saveCurrentSessionMessages();
 
-  // 发送后清除文件上传状态
-  clearFileUploadState();
-
   // 自动生成标题（仅在首次对话时）
   if (currentSession && isFirstMessage) {
     SessionManager.autoGenerateTitle(currentSession.id, text);
@@ -818,6 +838,9 @@ async function sendMessage() {
     ...pageContext?.metadata,
     userQuestion: text
   }, dialogId, false, !isFirstMessage);
+
+  // 发送后清除文件上传状态（必须在callAgent之后，因为callAgent内部读取uploadedFiles）
+  clearFileUploadState();
 }
 
 function addMessage(role, text) {
@@ -1215,6 +1238,22 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
   }
 
   // 重置状态
+  // 如果有正在进行的流，先中止
+  if (isStreaming && currentStreamSessionId) {
+    const oldSessionId = currentStreamSessionId;
+    chrome.runtime.sendMessage({
+      type: 'ABORT_STREAM',
+      sessionId: oldSessionId,
+    }).catch(() => {});
+    if (accumulatedText.trim() || accumulatedThinkText.trim()) {
+      const fullResponse = accumulatedThinkText
+        ? `  \n${accumulatedThinkText}\n\n${accumulatedText}\n\n*[已中止]*`
+        : `${accumulatedText}\n\n*[已中止]*`;
+      conversationHistory.push({ role: 'assistant', content: fullResponse });
+      SessionManager.saveCurrentSessionMessages();
+    }
+  }
+
   currentBotBubble = null;
   currentThinkBubble = null;
   currentThinkContainer = null;
@@ -1422,6 +1461,9 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 
   if (msg.type === 'STREAM_CHUNK') {
+    if (msg.sessionId && msg.sessionId !== currentStreamSessionId) {
+      return;
+    }
     const { content, contentType } = msg;
 
     if (contentType === 'think_start') {
@@ -1470,6 +1512,9 @@ chrome.runtime.onMessage.addListener((msg) => {
     }
 
   } else if (msg.type === 'STREAM_DONE' || msg.type === 'STREAM_ABORTED') {
+    if (msg.sessionId && msg.sessionId !== currentStreamSessionId) {
+      return;
+    }
     const fullResponse = accumulatedThinkText
       ? `  \n${accumulatedThinkText}\n\n${accumulatedText}`
       : accumulatedText;
@@ -1509,6 +1554,9 @@ chrome.runtime.onMessage.addListener((msg) => {
     isInThinkBlock = false;
 
   } else if (msg.type === 'STREAM_ERROR') {
+    if (msg.sessionId && msg.sessionId !== currentStreamSessionId) {
+      return;
+    }
     if (currentBotBubble) {
       const errorBubble = currentBotBubble.content.querySelector('.ai-bot:not(.ai-think)');
       if (errorBubble) {
@@ -1529,6 +1577,9 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 function clearMessages() {
+  if (isStreaming) {
+    abortStream();
+  }
   messagesContainer.innerHTML = '';
   clearContextCache();
   conversationHistory = [];
@@ -1597,10 +1648,14 @@ function renderSessionList() {
 }
 
 function switchToSession(sessionId) {
+  if (isStreaming) {
+    abortStream();
+  }
   const session = SessionManager.switchSession(sessionId);
   if (session) {
     renderSessionList();
     renderConversationHistory();
+    updateHeaderTitle();
     showToast(`切换到: ${session.title}`);
   }
 }
@@ -2379,6 +2434,7 @@ function selectAgentAndCreateSession(agentId) {
   // 创建新会话
   SessionManager.createSession(title, agentType);
   renderSessionList();
+  updateHeaderTitle();
   console.log(`[Sidepanel] 已创建新${toastMsg}会话`);
   showToast(`已新建${toastMsg}对话`);
 }
