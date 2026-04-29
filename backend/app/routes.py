@@ -81,12 +81,6 @@ def format_sse_event(event: dict, stream_start_time: Optional[float] = None) -> 
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n", stream_start_time
 
 
-def _check_api_key() -> bool:
-    """检查 API Key 是否已配置"""
-    api_key = get_env("API_KEY")
-    return bool(api_key and api_key != "your_api_key_here")
-
-
 AGENT_SYSTEM_PROMPTS = {
     "ac32fe9431b1444f8ac3cdf42901024e": """你是一位专业的网页内容总结专家。请基于当前网页的全部内容进行深度总结，要求：
 
@@ -324,6 +318,41 @@ async def unified_agent(request: AgentRequest):
     if not question:
         raise HTTPException(status_code=400, detail="缺少 question 参数")
 
+    # ====================== 【新增：读取上传的 TXT 文件】 ======================
+    file_content = ""
+    try:
+        # 仅当类型为 file 且有文件信息时读取
+        if request.referenced_object_type == "file" and request.referenced_objects:
+            ref_data = json.loads(request.referenced_objects)
+            file_list = ref_data.get("file", [])
+            if file_list:
+                # 取第一个文件（你也可以循环读取多个）
+                file_info = file_list[0]
+                file_id = file_info.get("file_id", "")
+                file_name = file_info.get("file_name", "")
+                request_id = request.request_id
+
+                if not file_id or not request_id:
+                    logger.warning("[FileRead] file_id 或 request_id 为空")
+                else:
+                    # 拼接上传时的路径：uploads/agent_id/request_id/file_id_filename
+                    target_dir = UPLOAD_DIR / agent_id / request_id
+                    # 遍历目录找到以 file_id 开头的文件（匹配上传规则）
+                    if target_dir.exists():
+                        for file_path in target_dir.glob(f"{file_id}_*"):
+                            # 只处理 txt 文件
+                            if file_path.suffix.lower() == ".txt":
+                                logger.info(f"[FileRead] 读取文件：{file_path}")
+                                with open(file_path, "r", encoding="utf-8") as f:
+                                    file_content = f.read()
+                                break  # 只读取第一个匹配的txt
+            if file_content:
+                # 把文件内容拼到问题前面
+                question = f"以下是上传的文件内容：\n{file_content}\n\n用户问题：{question}"
+    except Exception as e:
+        logger.error(f"[FileRead] 读取文件失败：{str(e)}")
+    # ==========================================================================
+
     # 根据不同智能体类型处理
     if agent_id == "ddf09cedfcbd4d188adc528461a91392":  # AI问答智能体
         # 1. 获取或创建对话会话
@@ -396,8 +425,6 @@ async def unified_agent(request: AgentRequest):
                 "X-Accel-Buffering": "no",
             },
         )
-
-
 # ========== 文件上传接口 ==========
 
 
@@ -463,12 +490,18 @@ async def upload_files(
         safe_filename = re.sub(r'[^\w\s.-]', '_', files.filename or "unnamed")
         save_path = save_dir / f"{file_uuid}_{safe_filename}"
 
-        # 读取并保存文件内容
-        file_content = await files.read()
-        with open(save_path, "wb") as f:
-            f.write(file_content)
+        # 增加配置
+        MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
-        file_size = len(file_content)
+        # 写入逻辑
+        with open(save_path, "wb") as f:
+            file_size = 0
+            while chunk := await files.read(1024 * 1024):  # 1MB 分块
+                file_size += len(chunk)
+                if file_size > MAX_FILE_SIZE:
+                    raise HTTPException(status_code=413, detail="文件超过50MB")
+                f.write(chunk)
+
         logger.info(f"[FileUpload] 文件上传成功: {files.filename} -> {save_path}, size: {file_size} bytes, agent_id: {agent_id}, file_uuid: {file_uuid}")
 
         return JSONResponse(

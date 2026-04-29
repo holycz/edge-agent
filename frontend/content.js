@@ -338,13 +338,20 @@ function extractApprovalComments(collectedContent = []) {
   }
 
   const extractedTexts = [];
-  // 【修复：全局去重弱化】
+  const processedTextHashes = new Set();
+  for (const item of approvalItems) {
+    const h = item.comment.trim();
+    if (h.length >= 5) processedTextHashes.add(h);
+  }
+
   function isDuplicateOrSubset(newText) {
+    const trimmed = newText.trim();
+    if (trimmed.length < 20) return false;
     for (const existing of extractedTexts) {
-      if (newText.length < 20) return false;
-      if (existing.includes(newText.substring(0, 60))) {
-        return true;
-      }
+      if (existing.includes(trimmed.substring(0, 60))) return true;
+    }
+    for (const h of processedTextHashes) {
+      if (trimmed.includes(h) || h.includes(trimmed.substring(0, 40))) return true;
     }
     return false;
   }
@@ -356,15 +363,14 @@ function extractApprovalComments(collectedContent = []) {
       const elements = document.querySelectorAll(selector);
       elements.forEach(el => {
         if (processed.has(el)) return;
-        // 跳过已被 .opinion-item 处理过的父容器，避免重复提取
         if (el.querySelector('.opinion-item')) return;
+        if (el.closest('.opinion-item')) return;
         let content = '';
 
         if (el.tagName === 'IFRAME') return;
 
         const category = getCategoryLabel(el);
 
-        // 克隆+强制展开隐藏内容
         const clone = el.cloneNode(true);
         clone.querySelectorAll('style, script, noscript, link[rel="stylesheet"]').forEach(el2 => el2.remove());
         clone.querySelectorAll('[style*="display: none"],.hidden,[aria-hidden="true"]').forEach(c=>{
@@ -422,11 +428,24 @@ function extractApprovalComments(collectedContent = []) {
 
   // 全局去重
   const seen = new Set();
+  const seenComments = new Set();
   const uniqueItems = [];
   for (const item of approvalItems) {
+    if (item.raw) {
+      const rawLines = item.comment.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+      const allAlreadySeen = rawLines.every(line => {
+        for (const sc of seenComments) {
+          if (sc.includes(line) || line.includes(sc)) return true;
+        }
+        return false;
+      });
+      if (allAlreadySeen) continue;
+    }
     const key = (item.name + '_' + item.comment.substring(0, 30)).toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
+      const commentTrim = item.comment.trim();
+      if (commentTrim.length >= 4) seenComments.add(commentTrim);
       uniqueItems.push(item);
     }
   }
@@ -445,7 +464,7 @@ function extractApprovalComments(collectedContent = []) {
 
   for (const cat of categoryOrder) {
     // 跳过不需要的分类：其他审批、承办部门员工办理等
-    const SKIP_CATEGORIES = ['其他审批', '承办部门员工办理', '承办部门其他领导批示'];
+    const SKIP_CATEGORIES = ['其他审批', '承办部门员工办理'];
     if (SKIP_CATEGORIES.includes(cat)) continue;
     const items = categoryGroups.get(cat);
     items.sort((a, b) => {
@@ -634,20 +653,41 @@ function getApprovalPageContent() {
   // 2.提取审批意见
   const approvalComments = [];
   extractApprovalComments(approvalComments);
+  const approvalTextSet = new Set();
   if (approvalComments.length > 0) {
     const commentsText = approvalComments.map(c => c.content).join('\n\n');
     parts.push('【审批意见】\n' + commentsText);
+    approvalComments.forEach(c => {
+      const lines = c.content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      lines.forEach(l => {
+        const cleaned = l.replace(/^[👤\s\[\]（）\(\)]+/g, '').replace(/^\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[\s:]\d{1,2}:\d{1,2}(:\d{1,2})?\s*/, '').trim();
+        if (cleaned.length >= 4) approvalTextSet.add(cleaned);
+      });
+    });
   }
 
-  // 3.提取折叠面板审批相关
+  // 3.提取折叠面板审批相关（去重：跳过与审批意见重复的内容）
   const collapsibleContent = [];
   extractCollapsibleContent(collapsibleContent);
   const approvalCollapsible = collapsibleContent.filter(c =>
     c.title && /审批|意见|批示|签批|审核/.test(c.title)
   );
   if (approvalCollapsible.length > 0) {
-    const collapsibleText = approvalCollapsible.map(c => `[${c.title}]\n${c.content}`).join('\n---\n');
-    parts.push('【审批相关面板】\n' + collapsibleText);
+    const filteredCollapsible = approvalCollapsible.filter(c => {
+      const lines = c.content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      const newLines = lines.filter(l => {
+        for (const existing of approvalTextSet) {
+          if (l.includes(existing) || existing.includes(l)) return false;
+        }
+        return true;
+      });
+      c.content = newLines.join('\n');
+      return newLines.length > 0;
+    });
+    if (filteredCollapsible.length > 0) {
+      const collapsibleText = filteredCollapsible.map(c => `[${c.title}]\n${c.content}`).join('\n---\n');
+      parts.push('【审批相关面板】\n' + collapsibleText);
+    }
   }
 
   if (parts.length === 0) {

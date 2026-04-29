@@ -482,9 +482,18 @@ async function checkPendingQuestion() {
         }
       } else if (action === 'openPanel') {
         console.log("[Sidepanel] 仅打开侧边栏");
-      } else if (action === 'summarizePage' || action === 'summarizeLeaderComments' ||
-                 action === 'pageRewrite' || action === 'pageProofread' || action === 'pageAsk') {
-        // 页面功能：总结、润色、稽核、AI问答
+      } else if (action === 'pageRewrite' || action === 'pageProofread' || action === 'pageAsk') {
+        const feature = FEATURE_PROMPTS[action];
+        if (feature) {
+          messagesContainer.innerHTML = '';
+          conversationHistory = [];
+          SessionManager.createSession(feature.label, feature.agentId);
+          renderSessionList();
+          inputTextarea.focus();
+          showToast(`已切换到${feature.label}对话`);
+          console.log("[Sidepanel] 仅创建会话，等待用户输入:", feature.label);
+        }
+      } else if (action === 'summarizePage' || action === 'summarizeLeaderComments') {
         await handlePageAction(action);
       } else {
         const feature = FEATURE_PROMPTS[action];
@@ -745,12 +754,23 @@ function setupEventListeners() {
 
 async function sendMessage() {
   const text = inputTextarea.value.trim();
-  if (!text) return;
+  if (!text) {
+    if (uploadedFiles.length > 0) {
+      showToast('请输入问题后再发送');
+    }
+    return;
+  }
 
   inputTextarea.value = '';
   inputTextarea.style.height = 'auto';
 
-  addMessage('user', text);
+  let displayText = text;
+  if (uploadedFiles.length > 0) {
+    const fileNames = uploadedFiles.map(f => f.fileName).join('、');
+    displayText = text + '\n\n📎 ' + fileNames;
+  }
+
+  addMessage('user', displayText);
   console.log('[Sidepanel] 发送用户消息，长度:', text.length, '字符:', text.substring(0, 100) + (text.length > 100 ? "..." : ""));
 
   // 获取当前会话
@@ -781,8 +801,11 @@ async function sendMessage() {
   }
 
   // 保存用户消息
-  conversationHistory.push({ role: 'user', content: text });
+  conversationHistory.push({ role: 'user', content: displayText });
   SessionManager.saveCurrentSessionMessages();
+
+  // 发送后清除文件上传状态
+  clearFileUploadState();
 
   // 自动生成标题（仅在首次对话时）
   if (currentSession && isFirstMessage) {

@@ -15,9 +15,7 @@ const activeStreams = new Map();
 async function testBackendUrl(url) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
-
-    // 使用统一智能体接口进行测试，发送一个空的测试请求
+    const timeoutId = setTimeout(() => controller.abort(), 3000); //    // 使用统一智能体接口进行测试，发送一个空的测试请求
     const response = await fetch(`${url}/sxzypt/py_talkHub/agent/agent`, {
       method: "POST",
       headers: {
