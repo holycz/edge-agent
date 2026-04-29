@@ -23,28 +23,9 @@ function getSelectedText() {
   }
 }
 
-// 判断元素是否可见
+// 判断元素是否可见【修复：取消可见性拦截，全部放行】
 function isVisible(element) {
-  if (!element) return false;
-
-  if (element.hasAttribute('hidden') || element.hidden) return false;
-
-  const style = window.getComputedStyle(element);
-  if (style.display === 'none' ||
-      style.visibility === 'hidden' ||
-      style.opacity === '0') {
-    return false;
-  }
-
-  const rect = element.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) {
-    const hasVisibleChildren = element.children.length > 0 &&
-      Array.from(element.children).some(child => isVisible(child));
-    if (!hasVisibleChildren) {
-      return false;
-    }
-  }
-
+  if (!element) return true;
   return true;
 }
 
@@ -120,28 +101,26 @@ function extractIframeContent(collectedContent = []) {
 
   iframes.forEach(iframe => {
     try {
-      if (!isVisible(iframe)) return;
-
       const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
       if (iframeDoc) {
         const iframeBody = iframeDoc.body;
         if (iframeBody) {
-        const content = iframeBody.innerText?.trim();
-        if (content && content.length > 50) {
-          collectedContent.push(`[iframe内容]: ${content}`);
-          console.log('[Content] 提取 iframe 内容:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
-        }
+          const content = iframeBody.innerText?.trim();
+          if (content && content.length > 20) {
+            collectedContent.push(`[iframe内容]: ${content}`);
+            console.log('[Content] 提取 iframe 内容:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
+          }
         }
       }
     } catch (e) {
-      console.log('[Content] 无法访问 iframe (可能是跨域):', e.message);
+      console.log('[Content] 无法访问 iframe (跨域忽略):', e.message);
     }
   });
 
   return collectedContent;
 }
 
-// OA系统正文内容选择器（公文正文区域）
+// OA系统正文内容选择器
 const OA_BODY_SELECTORS = [
   '.wf-req-content', '.req-content', '.doc-content',
   '.document-content', '.doc-body', '.document-body',
@@ -154,12 +133,12 @@ const OA_BODY_SELECTORS = [
   '#contentBody', '#docBody', '#mainBody',
   '.km-doc-content', '.km-document-body',
   '[class*="body-text"]', '[class*="content-text"]',
-  '. RichtextContent', '.rich-text-content',
-  '.text-content', '.article-content'
+  '.rich-text-content', '.text-content', '.article-content'
 ];
 
 // OA系统审批意见相关选择器
 const APPROVAL_COMMENT_SELECTORS = [
+  '.opinion-item',
   '.wf-reqcomments-detail', '.req-comments-detail',
   '[class*="comment"][class*="detail"]', '[class*="approval"][class*="comment"]',
   '.sign-input-content', '.sign-content',
@@ -203,23 +182,32 @@ const RICH_EDITOR_SELECTORS = [
   '[contenteditable="true"]'
 ];
 
+// 清理内容中的CSS和脚本
+function cleanContentFromStyleAndScript(text) {
+  if (!text) return text;
+  let cleaned = text
+    .replace(/@\w+\s+\w+\s*\{[^}]*\}/gs, '')
+    .replace(/[.#][\w-]+\s*\{[^}]*\}/gs, '')
+    .replace(/\[[\w-]+[^\]]*\]\s*\{[^}]*\}/gs, '')
+    .replace(/^\s*[\w-]+:\s*[^;]+;?\s*$/gmi, '')
+    .replace(/\.[\w-]+[\w\s.,:>\-]*\{[^}]*\}/gs, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\n\s*\n\s*\n/g, '\n\n')
+    .trim();
+  return cleaned;
+}
 
-
-// 从折叠面板提取内容（去重版本）
+// 从折叠面板提取内容
 function extractCollapsibleContent(collectedContent = []) {
   const processedElements = new Set();
-  const extractedTexts = []; // 存储已提取的文本内容用于子串检查
+  const extractedTexts = [];
 
-  // 辅助函数：检查内容是否是已提取内容的子集或重复
+  // 【修复：弱化去重，避免误删审批】
   function isDuplicateOrSubset(newText) {
     for (const existing of extractedTexts) {
-      // 如果新内容几乎与已有内容相同
-      if (Math.abs(newText.length - existing.length) < 50 &&
-          (newText.includes(existing.substring(0, 100)) || existing.includes(newText.substring(0, 100)))) {
-        return true;
-      }
-      // 如果新内容明显是已有内容的子集（长度差距很大但内容包含）
-      if (newText.length < existing.length * 0.9 && existing.includes(newText.substring(0, Math.min(newText.length, 200)))) {
+      if (newText.length < 30) return false;
+      if (Math.abs(newText.length - existing.length) < 20 &&
+          newText.includes(existing.substring(0, 50))) {
         return true;
       }
     }
@@ -233,9 +221,7 @@ function extractCollapsibleContent(collectedContent = []) {
         try {
           if (processedElements.has(el)) return;
           const text = el.innerText?.trim() || '';
-          if (text.length < 20) return;
 
-          // 跳过已经被父元素处理的元素（通过选择器重叠）
           let parent = el.parentElement;
           while (parent) {
             if (processedElements.has(parent)) return;
@@ -243,16 +229,10 @@ function extractCollapsibleContent(collectedContent = []) {
           }
 
           const clone = el.cloneNode(true);
-
-          // 移除 style 和 script 标签
           clone.querySelectorAll('style, script, noscript, link[rel="stylesheet"]').forEach(el2 => el2.remove());
 
-          const collapsedElements = clone.querySelectorAll([
-            '[style*="display: none"]',
-            '.hidden', '.collapsed', '[aria-hidden="true"]', '[hidden]'
-          ].join(','));
-
-          collapsedElements.forEach(collapsed => {
+          // 强制展开所有折叠隐藏内容
+          clone.querySelectorAll('[style*="display: none"],.hidden,.collapsed,[aria-hidden="true"],[hidden]').forEach(collapsed => {
             collapsed.style.display = 'block';
             collapsed.style.visibility = 'visible';
             collapsed.removeAttribute('hidden');
@@ -260,13 +240,9 @@ function extractCollapsibleContent(collectedContent = []) {
           });
 
           let expandedContent = clone.innerText?.trim() || text;
-          // 清理 CSS 内容
           expandedContent = cleanContentFromStyleAndScript(expandedContent);
 
-          // 检查是否是重复或子集内容
-          if (isDuplicateOrSubset(expandedContent)) {
-            return;
-          }
+          if (isDuplicateOrSubset(expandedContent)) return;
 
           let title = '折叠面板';
           const header = el.querySelector('.ant-collapse-header, .el-collapse-item__header, summary');
@@ -275,8 +251,7 @@ function extractCollapsibleContent(collectedContent = []) {
           collectedContent.push({
             type: 'collapsible', title, content: expandedContent
           });
-          extractedTexts.push(expandedContent); // 记录已提取的文本
-          console.log('[Content] 提取折叠面板内容:', title, expandedContent.length, '字符:', expandedContent.substring(0, 100) + (expandedContent.length > 100 ? '...' : ''));
+          extractedTexts.push(expandedContent);
           processedElements.add(el);
         } catch (e) {}
       });
@@ -285,63 +260,229 @@ function extractCollapsibleContent(collectedContent = []) {
   return collectedContent;
 }
 
-// 提取审批意见（去重版本）
+// 提取审批意见【最终修复版：删除重复代码、放宽过滤、强制读取隐藏区域】
 function extractApprovalComments(collectedContent = []) {
+  const TRIVIAL_PATTERNS = /^(已学习[。！]?|已阅[，。！、]?|已阅读[。！]?|已办[。！]?|已收到[。！]?|请阅|请查收|已收悉|已收|已看|已知悉|同意|收到|已阅读|已办|按要求办理|按要求执行|请相关同事阅|已阅，学习[。！]?|已阅，请相关同事阅|已阅，按要求办理|已阅，按要求执行)$/i;
+  const approvalItems = [];
   const processed = new Set();
-  const extractedTexts = []; // 存储已提取的文本用于去重
 
-  // 辅助函数：检查内容是否是已提取内容的子集或重复
+  function parseSignText(signText) {
+    signText = signText.replace(/\u00a0/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    const match = signText.match(/([\u4e00-\u9fa5]{2,4})(?:\s*[\(（]([\s\S]*?)[\)）]\s*)?\s+(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}(?:\s+\d{1,2}:\d{1,2}(?::\d{1,2})?)?)/);
+    if (match) {
+      let dept = (match[2] || '').replace(/^[\(（]/, '');
+      const innerClose = dept.lastIndexOf('）');
+      if (innerClose >= 0 && innerClose === dept.length - 1) {
+        dept = dept.substring(0, innerClose);
+      }
+      return { name: match[1], dept, date: match[3] };
+    }
+    const simpleMatch = signText.match(/([\u4e00-\u9fa5]{2,4})\s+(\d{4}[-/年]\d{1,2}[-/月]\d{1,2})/);
+    if (simpleMatch) {
+      return { name: simpleMatch[1], dept: '', date: simpleMatch[2] };
+    }
+    return null;
+  }
+
+  function getCategoryLabel(opinionItem) {
+    let el = opinionItem.parentElement;
+    while (el) {
+      const label = el.querySelector('.opinion-label');
+      if (label) {
+        const text = label.innerText.trim();
+        if (text) return text;
+      }
+      el = el.parentElement;
+    }
+    return '';
+  }
+
+  // 1.优先抓取标准 .opinion-item 审批块
+  const opinionItems = document.querySelectorAll('.opinion-item');
+  if (opinionItems.length > 0) {
+    opinionItems.forEach(item => {
+      if (processed.has(item)) return;
+      processed.add(item);
+
+      const contentEl = item.querySelector('.opinion-content');
+      const signEl = item.querySelector('.opinion-sign-text');
+
+      const comment = (contentEl ? contentEl.innerText : '').trim();
+      const signText = signEl ? signEl.innerText : '';
+
+      const parsed = parseSignText(signText);
+      const category = getCategoryLabel(item);
+
+      if (parsed) {
+        // 【修复：放宽长度限制，短意见也保留】
+        if (TRIVIAL_PATTERNS.test(comment)) return;
+        approvalItems.push({
+          name: parsed.name,
+          dept: parsed.dept,
+          date: parsed.date,
+          comment,
+          category,
+        });
+      } else {
+        if (TRIVIAL_PATTERNS.test(comment)) return;
+        approvalItems.push({
+          name: '',
+          dept: '',
+          date: '',
+          comment: comment || signText,
+          category,
+          raw: true,
+        });
+      }
+    });
+  }
+
+  const extractedTexts = [];
+  // 【修复：全局去重弱化】
   function isDuplicateOrSubset(newText) {
     for (const existing of extractedTexts) {
-      // 如果内容几乎相同
-      if (Math.abs(newText.length - existing.length) < 30 &&
-          (newText.includes(existing.substring(0, 80)) || existing.includes(newText.substring(0, 80)))) {
-        return true;
-      }
-      // 如果新内容是已有内容的子集
-      if (newText.length < existing.length * 0.85 && existing.includes(newText.substring(0, Math.min(newText.length, 150)))) {
+      if (newText.length < 20) return false;
+      if (existing.includes(newText.substring(0, 60))) {
         return true;
       }
     }
     return false;
   }
 
+  // 2.兜底抓取所有审批相关容器
   APPROVAL_COMMENT_SELECTORS.forEach(selector => {
+    if (selector === '.opinion-item') return;
     try {
       const elements = document.querySelectorAll(selector);
       elements.forEach(el => {
         if (processed.has(el)) return;
+        // 跳过已被 .opinion-item 处理过的父容器，避免重复提取
+        if (el.querySelector('.opinion-item')) return;
         let content = '';
 
-        if (el.tagName === 'IFRAME') {
-          try {
-            const doc = el.contentDocument || el.contentWindow?.document;
-            content = doc?.body?.innerText?.trim() || '';
-          } catch (e) {}
-        } else {
-          const clone = el.cloneNode(true);
-          // 移除 style 和 script 标签
-          clone.querySelectorAll('style, script, noscript, link[rel="stylesheet"]').forEach(el2 => el2.remove());
-          content = clone.innerText?.trim() || '';
-        }
+        if (el.tagName === 'IFRAME') return;
 
-        // 清理 CSS 内容
+        const category = getCategoryLabel(el);
+
+        // 克隆+强制展开隐藏内容
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('style, script, noscript, link[rel="stylesheet"]').forEach(el2 => el2.remove());
+        clone.querySelectorAll('[style*="display: none"],.hidden,[aria-hidden="true"]').forEach(c=>{
+          c.style.display='block';c.removeAttribute('hidden');
+        });
+
+        content = clone.innerText?.trim() || '';
         content = cleanContentFromStyleAndScript(content);
+        if (content.length < 3) return;
+        if (isDuplicateOrSubset(content)) return;
 
-        if (content.length < 5) return;
-
-        // 检查是否是重复或子集内容
-        if (isDuplicateOrSubset(content)) {
-          return;
+        const lines = content.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+        let dateIndex = -1;
+        for (let i = 0; i < lines.length; i++) {
+          if (/\d{4}[-/年]\d{1,2}[-/月]\d{1,2}/.test(lines[i])) {
+            dateIndex = i;
+            break;
+          }
         }
 
-        collectedContent.push({ type: 'approval_comment', content });
-        extractedTexts.push(content); // 记录已提取的文本
-        console.log('[Content] 提取审批意见:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
+        if (dateIndex >= 0) {
+          const dateLine = lines[dateIndex];
+          const dateMatch = dateLine.match(/(\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:[\s:]\d{1,2}:\d{1,2})?)?/);
+          const date = dateMatch ? dateMatch[1] : dateLine;
+          let name = '', dept = '';
+          const sameLineMatch = dateLine.match(/([\u4e00-\u9fa5]{2,4})[\s\（]([^\）]*)/);
+          if (sameLineMatch) {
+            name = sameLineMatch[1];
+            dept = sameLineMatch[2].replace(/^[\(（]/, '');
+          } else if (dateIndex > 0) {
+            const prevLine = lines[dateIndex - 1];
+            if (/^[\u4e00-\u9fa5]{2,4}$/.test(prevLine)) name = prevLine;
+          }
+
+          let commentLines = [];
+          for (let i = 0; i < dateIndex; i++) {
+            const line = lines[i];
+            if (line !== name) commentLines.push(line);
+          }
+          const comment = commentLines.join('\n').trim();
+          if (TRIVIAL_PATTERNS.test(comment)) return;
+
+          approvalItems.push({ name, dept, date, comment, category });
+          extractedTexts.push(content);
+        } else {
+          if (!TRIVIAL_PATTERNS.test(content)) {
+            approvalItems.push({ name: '', dept: '', date: '', comment: content, category, raw: true });
+            extractedTexts.push(content);
+          }
+        }
         processed.add(el);
       });
     } catch (e) {}
   });
+
+  // 全局去重
+  const seen = new Set();
+  const uniqueItems = [];
+  for (const item of approvalItems) {
+    const key = (item.name + '_' + item.comment.substring(0, 30)).toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueItems.push(item);
+    }
+  }
+
+  // 分类+分组格式化
+  const categoryGroups = new Map();
+  const categoryOrder = [];
+  for (const item of uniqueItems) {
+    const cat = item.category || '其他审批';
+    if (!categoryGroups.has(cat)) {
+      categoryGroups.set(cat, []);
+      categoryOrder.push(cat);
+    }
+    categoryGroups.get(cat).push(item);
+  }
+
+  for (const cat of categoryOrder) {
+    // 跳过不需要的分类：其他审批、承办部门员工办理等
+    const SKIP_CATEGORIES = ['其他审批', '承办部门员工办理', '承办部门其他领导批示'];
+    if (SKIP_CATEGORIES.includes(cat)) continue;
+    const items = categoryGroups.get(cat);
+    items.sort((a, b) => {
+      if (!a.date || !b.date) return 0;
+      return b.date.localeCompare(a.date);
+    });
+    const personMap = new Map();
+    const personOrder = [];
+    for (const item of items) {
+      const personKey = item.name || ('_raw_' + item.comment.substring(0, 20));
+      if (!personMap.has(personKey)) {
+        personMap.set(personKey, { name: item.name, dept: item.dept, comments: [] });
+        personOrder.push(personKey);
+      }
+      const entry = personMap.get(personKey);
+      if (item.dept && !entry.dept) entry.dept = item.dept;
+      entry.comments.push({ date: item.date, comment: item.comment });
+    }
+
+    let formatted = `【${cat}】\n`;
+    for (const personKey of personOrder) {
+      const entry = personMap.get(personKey);
+      if (entry.name) {
+        formatted += `  👤 ${entry.name}`;
+        if (entry.dept) formatted += ` | ${entry.dept}`;
+        formatted += '\n';
+      }
+      entry.comments.forEach(c => {
+        if (c.date) formatted += `    [${c.date}] `;
+        formatted += c.comment + '\n';
+      });
+    }
+
+    collectedContent.push({ type: 'approval_comment', content: formatted.trim() });
+  }
+
+  console.log('[Content] 提取审批意见总计:', uniqueItems.length, '条');
   return collectedContent;
 }
 
@@ -362,7 +503,6 @@ function extractWorkflowInfo(collectedContent = []) {
     collectedContent.push({
       type: 'workflow_nodes', nodes: uniqueNodes
     });
-    console.log('[Content] 提取工作流信息:', uniqueNodes.length, '个节点:', uniqueNodes.slice(0, 3).join(', ') + (uniqueNodes.length > 3 ? '...' : ''));
   }
   return collectedContent;
 }
@@ -371,69 +511,35 @@ function extractWorkflowInfo(collectedContent = []) {
 function extractStepsContent(clone) {
   const steps = clone.querySelector('.ant-steps, [class*="steps"]');
   if (!steps) return null;
-
   const titles = Array.from(steps.querySelectorAll('.ant-steps-item-title, [class*="step-title"]'))
     .map(el => el.innerText.trim());
   return `[步骤组件] ${titles.join(' → ')}\n${clone.innerText.trim()}`;
 }
 
-// 清理内容中的CSS和脚本
-function cleanContentFromStyleAndScript(text) {
-  if (!text) return text;
-  // 移除 CSS 规则块（@page, .class, #id 等）
-  let cleaned = text
-    // 移除 @page, @media 等 CSS at-rules
-    .replace(/@\w+\s+\w+\s*\{[^}]*\}/gs, '')
-    // 移除 CSS 选择器规则块
-    .replace(/[.#][\w-]+\s*\{[^}]*\}/gs, '')
-    // 移除 [attribute] 选择器规则块
-    .replace(/\[[\w-]+[^\]]*\]\s*\{[^}]*\}/gs, '')
-    // 移除 CSS 属性行（mso-开头，font-family等）
-    .replace(/^\s*[\w-]+:\s*[^;]+;?\s*$/gmi, '')
-    // 移除 CSS 类定义（如 .jdf-doc-editor, .enlarge-main-text 等）
-    .replace(/\.[\w-]+[\w\s.,:>\-]*\{[^}]*\}/gs, '')
-    // 移除 /* 注释 */
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    // 清理连续空行
-    .replace(/\n\s*\n\s*\n/g, '\n\n')
-    .trim();
-  return cleaned;
-}
-
 // 需要过滤移除的 UI 组件选择器
 const UI_COMPONENTS_TO_REMOVE = [
-  // 日期/时间选择器相关
-  '.ant-picker-dropdown', '.ant-calendar-picker', '.ant-calendar',
-  '.ant-picker-panel', '.ant-picker-date-panel', '.ant-picker-time-panel',
-  '.ant-picker-range-arrow', '.ant-picker-header',
-  '.el-picker-dropdown', '.el-date-picker', '.el-time-picker',
-  '.el-date-table', '.el-year-table', '.el-month-table',
-  // 下拉菜单/选择器
-  '.ant-select-dropdown', '.ant-select-dropdown-menu',
-  '.el-select-dropdown', '.el-dropdown-menu',
-  // 加载状态
-  '.ant-spin', '.ant-spin-container', '.el-loading-spinner',
-  '[class*="loading"]', '[class*="spinner"]',
-  // 空状态/无数据
-  '.ant-empty', '.el-empty', '.ant-select-item-empty',
-  '[class*="empty"][class*="no-data"]', '[class*="no-match"]',
-  // 弹窗/浮层（非内容区域）
-  '.ant-tooltip', '.ant-popover', '.el-tooltip', '.el-popover',
-  '.ant-modal-wrap', '.ant-modal-mask', '.el-dialog__wrapper'
+  '.ant-picker-dropdown', '.ant-calendar-picker',
+  '.el-picker-dropdown', '.el-date-picker',
+  '.ant-select-dropdown', '.el-select-dropdown',
+  '.ant-spin', '.el-loading-spinner',
+  '.ant-empty', '.el-empty',
+  '.ant-tooltip', '.el-tooltip'
 ];
 
-// 获取元素完整内容（含隐藏）
+// 获取元素完整内容（强制展开隐藏/折叠）
 function getAllContentFromElement(element) {
   const clone = element.cloneNode(true);
-
-  // 移除 style 和 script 标签
   clone.querySelectorAll('style, script, noscript, link[rel="stylesheet"]').forEach(el => el.remove());
-
-  // 移除 UI 组件（日历、下拉框、加载状态等）
   UI_COMPONENTS_TO_REMOVE.forEach(selector => {
-    try {
-      clone.querySelectorAll(selector).forEach(el => el.remove());
-    } catch (e) {}
+    try { clone.querySelectorAll(selector).forEach(el => el.remove()); } catch (e) {}
+  });
+
+  // 核心修复：强制展开所有折叠、隐藏、display:none 审批区域
+  clone.querySelectorAll('[style*="display:none"],[hidden],.hidden,.collapsed,[aria-hidden="true"]').forEach(el => {
+    el.style.display = 'block';
+    el.style.visibility = 'visible';
+    el.removeAttribute('hidden');
+    el.removeAttribute('aria-hidden');
   });
 
   if (hasTabStructure(element)) {
@@ -441,117 +547,50 @@ function getAllContentFromElement(element) {
     if (steps) return cleanContentFromStyleAndScript(steps);
   }
 
-  clone.querySelectorAll('[style*="display:none"], [hidden], .hidden, .collapsed').forEach(el => {
-    el.style.display = 'block';
-    el.removeAttribute('hidden');
-  });
-
   const rawText = clone.innerText?.trim() || '';
   let cleanedText = cleanContentFromStyleAndScript(rawText);
-
-  // 过滤纯数字列表（如日历日期、时间选择器数字等）
-  cleanedText = cleanedText
-    // 移除纯数字行（1-99 的单个数字或连续数字列表）
-    .replace(/\n\s*(\d{1,2}\s+){10,}/g, '\n')  // 连续10个以上短数字
-    .replace(/\n\s*\d{1,2}(\s+\d{1,2}){5,}\s*\n/g, '\n')  // 6个以上的数字序列
-    // 移除 "00010203...59" 这类时间选择器数字
-    .replace(/\d{2}(\d{2}){20,}/g, '')
-    // 移除 "202020212022..." 年份列表
-    .replace(/(20|19)\d{2}(\s+(20|19)\d{2}){3,}/g, '')
-    // 移除 "一月二月三月...十二月" 月份列表
-    .replace(/(一月|二月|三月|四月|五月|六月|七月|八月|九月|十月|十一月|十二月)(\s+\1){2,}/g, '')
-    // 移除 "日一二三四五六" 星期列表
-    .replace(/日\s+一\s+二\s+三\s+四\s+五\s+六/g, '')
-    .replace(/[日月火水木金土]\s+[日月火水木金土](\s+[日月火水木金土]){4,}/g, '')
-    // 移除 "上午 下午" 的重复选项
-    .replace(/(上午|下午)(\s+\1){2,}/g, '$1')
-    .replace(/(上午|下午)\s+无匹配数据(\s+\1\s+无匹配数据)+/gi, '')
-    // 移除 "请选择..." 下拉提示
-    .replace(/请选择[^\n]*\n\s*无匹配数据/gi, '')
-    // 移除 "正在加载..." 提示
-    .replace(/正在加载\.{0,3}/g, '')
-    // 移除 "加载中..."
-    .replace(/加载中\.{0,3}/g, '')
-    // 清理多余空行
-    .replace(/\n\s*\n\s*\n/g, '\n\n')
-    .trim();
-
   return cleanedText;
 }
 
-// 获取弹窗内容（去重版本）
+// 获取弹窗内容
 function getModalContent() {
   const modals = [];
   const processedElements = new Set();
-  const extractedTexts = []; // 存储已提取的文本用于去重
+  const extractedTexts = [];
 
-  console.log('[Content] 开始获取弹窗内容...');
-  const selectors = ['dialog', '[role="dialog"]', '[role="alertdialog"]', '.modal', '.popup', '.layer'];
-
-  // 辅助函数：检查内容是否是已提取内容的子集或重复
   function isDuplicateOrSubset(newText) {
     for (const existing of extractedTexts) {
-      // 如果内容几乎相同
-      if (Math.abs(newText.length - existing.length) < 50 &&
-          (newText.includes(existing.substring(0, 100)) || existing.includes(newText.substring(0, 100)))) {
-        return true;
-      }
-      // 如果新内容是已有内容的子集
-      if (newText.length < existing.length * 0.9 && existing.includes(newText.substring(0, Math.min(newText.length, 200)))) {
-        return true;
-      }
+      if (existing.includes(newText.substring(0, 80))) return true;
     }
     return false;
   }
 
+  const selectors = ['dialog', '[role="dialog"]', '.modal', '.popup'];
   selectors.forEach(s => {
     document.querySelectorAll(s).forEach(el => {
       if (processedElements.has(el)) return;
-      if (isVisible(el)) {
-        const content = getAllContentFromElement(el);
-        if (content.length > 20 && !isDuplicateOrSubset(content)) {
-          modals.push({ content });
-          extractedTexts.push(content);
-          console.log('[Content] 提取弹窗内容:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
-          processedElements.add(el);
-        }
+      const content = getAllContentFromElement(el);
+      if (content.length > 20 && !isDuplicateOrSubset(content)) {
+        modals.push({ content });
+        extractedTexts.push(content);
+        processedElements.add(el);
       }
     });
   });
-
-  // 高层级浮动元素
-  document.querySelectorAll('div, section').forEach(el => {
-    if (processedElements.has(el)) return;
-    const style = getComputedStyle(el);
-    if (['fixed', 'sticky'].includes(style.position) && +style.zIndex > 100) {
-      const content = getAllContentFromElement(el);
-      if (content.length > 50 && !isDuplicateOrSubset(content)) {
-        modals.push({ content });
-        extractedTexts.push(content);
-        console.log('[Content] 提取高层级浮动元素:', content.length, '字符:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
-        processedElements.add(el);
-      }
-    }
-  });
-
-  if (modals.length) {
-    console.log('[Content] 总共提取到', modals.length, '个弹窗/浮动层内容');
-  }
   return modals;
 }
 
-// 内容提取（不再截断，保留完整内容）
+// 内容格式化
 function truncateContent(content) {
   return content;
 }
 
-// 特定网站内容提取
 function cleanSpecialSiteContent(c) {
   return c.replace(/^\s*--[a-z0-9-]+:.+/gm, '').replace(/[\d,\s;]{10,}/g, '').trim();
 }
 
 function extractSpecialSiteSmartContent() {
-  const selectors = ['.RichContent-inner', '.Post-content', '.QuestionRichText-content', '[itemprop="articleBody"]'];
+  const selectors = ['.RichContent-inner', '.Post-content', '[itemprop="articleBody"]'];
   for (const s of selectors) {
     const el = document.querySelector(s);
     if (el && el.textContent.length > 500) return el.textContent;
@@ -559,40 +598,30 @@ function extractSpecialSiteSmartContent() {
   return '';
 }
 
-// 获取公文批示专用内容（只提取正文 + 领导批示，不含页面其他信息）
+// 获取公文批示专用内容
 function getApprovalPageContent() {
   console.log('[Content] ========== 开始获取公文批示专用内容 ==========');
-
   const parts = [];
 
-  // 1. 提取正文内容
+  // 1.提取正文
   let bodyContent = '';
   for (const selector of OA_BODY_SELECTORS) {
     try {
       const el = document.querySelector(selector);
       if (el) {
         bodyContent = getAllContentFromElement(el);
-        if (bodyContent && bodyContent.length > 20) {
-          console.log('[Content] 提取正文内容（选择器:', selector, '），长度:', bodyContent.length);
-          break;
-        }
-        bodyContent = '';
+        if (bodyContent.length > 20) break;
       }
     } catch (e) {}
   }
 
-  // 如果没找到专用正文选择器，尝试从富文本编辑器提取
   if (!bodyContent) {
     for (const selector of RICH_EDITOR_SELECTORS) {
       try {
         const el = document.querySelector(selector);
         if (el) {
           bodyContent = getAllContentFromElement(el);
-          if (bodyContent && bodyContent.length > 20) {
-            console.log('[Content] 提取正文内容（富文本编辑器:', selector, '），长度:', bodyContent.length);
-            break;
-          }
-          bodyContent = '';
+          if (bodyContent.length > 20) break;
         }
       } catch (e) {}
     }
@@ -602,67 +631,47 @@ function getApprovalPageContent() {
     parts.push('【正文内容】\n' + bodyContent);
   }
 
-  // 2. 提取领导批示/审批意见
+  // 2.提取审批意见
   const approvalComments = [];
   extractApprovalComments(approvalComments);
   if (approvalComments.length > 0) {
-    const commentsText = approvalComments
-      .map(c => c.content)
-      .join('\n---\n');
-    parts.push('【领导批示/审批意见】\n' + commentsText);
+    const commentsText = approvalComments.map(c => c.content).join('\n\n');
+    parts.push('【审批意见】\n' + commentsText);
   }
 
-  // 3. 提取折叠面板中的审批相关信息
+  // 3.提取折叠面板审批相关
   const collapsibleContent = [];
   extractCollapsibleContent(collapsibleContent);
   const approvalCollapsible = collapsibleContent.filter(c =>
-    c.title && (
-      /审批|意见|批示|签批|审核|办理/.test(c.title) ||
-      /正文|内容|详情/.test(c.title)
-    )
+    c.title && /审批|意见|批示|签批|审核/.test(c.title)
   );
   if (approvalCollapsible.length > 0) {
-    const collapsibleText = approvalCollapsible
-      .map(c => `[${c.title}]\n${c.content}`)
-      .join('\n---\n');
-    // 避免与已提取的内容重复
-    const existingText = parts.join('');
-    if (!existingText.includes(collapsibleText.substring(0, 200))) {
-      parts.push('【审批相关面板】\n' + collapsibleText);
-    }
+    const collapsibleText = approvalCollapsible.map(c => `[${c.title}]\n${c.content}`).join('\n---\n');
+    parts.push('【审批相关面板】\n' + collapsibleText);
   }
 
   if (parts.length === 0) {
-    console.log('[Content] 未提取到公文批示专用内容，返回空');
     return '';
   }
 
   const result = parts.join('\n\n');
-  console.log('[Content] 公文批示专用内容总长度:', result.length, '字符');
   return result;
 }
 
-// 获取页面内容（简化版 - 只提取主体内容）
+// 获取页面内容
 function getPageContent() {
-  console.log('[Content] ========== 开始获取页面内容（简化模式 - 只提取主体） ==========');
-  console.log('[Content] 当前页面URL:', location.href);
   const isZhihu = location.hostname.includes('zhihu.com');
-
-  // 主体内容
   let mainContent = '';
   if (isZhihu) {
     const main = extractSpecialSiteSmartContent();
     if (main) {
       const cleaned = cleanSpecialSiteContent(main);
       mainContent = cleaned;
-      console.log('[Content] 提取知乎主体内容:', cleaned.length, '字符');
     }
   } else {
     const main = document.querySelector('main') || document.querySelector('article') || document.body;
     mainContent = getAllContentFromElement(main);
-    console.log('[Content] 提取页面主体内容:', mainContent.length, '字符');
   }
-
   return mainContent;
 }
 
@@ -673,7 +682,6 @@ function getPageMetadata() {
     url: location.href,
     description: document.querySelector('meta[name="description"]')?.content || ''
   };
-  console.log('[Content] 获取页面元信息:', metadata);
   return metadata;
 }
 
@@ -714,8 +722,6 @@ function notifyPageChanged() {
 function startPageChangeDetection() {
   if (isObserving) return;
   isObserving = true;
-
-  // DOM变化
   pageChangeObserver = new MutationObserver(m => {
     const change = m.some(x =>
       (x.addedNodes.length || x.removedNodes.length) &&
@@ -730,7 +736,6 @@ function startPageChangeDetection() {
   });
   pageChangeObserver.observe(document.body, { childList: true, subtree: true });
 
-  // URL变化
   let lastUrl = location.href;
   new MutationObserver(() => {
     if (location.href !== lastUrl) {
@@ -744,21 +749,16 @@ function startPageChangeDetection() {
 chrome.runtime.onMessage.addListener((msg, _, res) => {
   if (msg.type === "GET_SELECTED_TEXT") {
     const text = getSelectedText();
-    console.log('[Content] 收到 GET_SELECTED_TEXT 请求，返回文本长度:', text.length);
     return res({ text: text });
   }
   if (msg.type === "GET_PAGE_CONTEXT") {
-    console.log('[Content] 收到 GET_PAGE_CONTEXT 请求，开始获取页面内容...');
     const content = getPageContent();
     const metadata = getPageMetadata();
-    console.log('[Content] 返回页面内容，长度:', content.length, '字符，元信息:', metadata);
     return res({ content: content, metadata: metadata });
   }
   if (msg.type === "GET_APPROVAL_PAGE_CONTENT") {
-    console.log('[Content] 收到 GET_APPROVAL_PAGE_CONTENT 请求，开始获取公文批示专用内容...');
     const content = getApprovalPageContent();
     const metadata = getPageMetadata();
-    console.log('[Content] 返回公文批示专用内容，长度:', content.length, '字符');
     return res({ content: content, metadata: metadata });
   }
 });
