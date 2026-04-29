@@ -45,7 +45,7 @@ class DialogSession:
 class DialogManager:
     """
     对话管理器
-    根据 dialogId 管理对话上下文
+    根据 dialog_id 管理对话上下文
     """
 
     def __init__(self, max_session_age: int = 3600, max_sessions: int = 1000):

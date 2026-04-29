@@ -38,8 +38,9 @@ async def stream_chat(
 
     proxy_url = _get_proxy_url()
 
-    logger.debug(
-        f"Request to {model}: stream={request.stream}, thinking={request.enable_thinking}"
+    logger.info(
+        f"Request to {api_url}: model={model}, stream={request.stream}, "
+        f"messages_count={len(request.messages)}, thinking={config.supports_thinking}"
     )
 
     try:
@@ -132,7 +133,7 @@ async def _handle_error_response(
     except Exception:
         pass
 
-    logger.error(f"API error: {error_message}")
+    logger.error(f"API error: {error_message}, response body: {error_text[:500]}")
     yield {"type": "error", "error": error_message}
 
 

@@ -17,16 +17,17 @@ async function testBackendUrl(url) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒超时
 
-    // 使用 AI 问答智能体接口进行测试，发送一个空的测试请求
-    const response = await fetch(`${url}/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392`, {
+    // 使用统一智能体接口进行测试，发送一个空的测试请求
+    const response = await fetch(`${url}/sxzypt/py_talkHub/agent/agent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        requestId: "test-" + Date.now(),
+        request_id: "test-" + Date.now(),
         dialogId: "test-" + Date.now(),
-        keyword: "test"
+        agent_id: "ddf09cedfcbd4d188adc528461a91392",
+        question: "test"
       }),
       signal: controller.signal
     });
@@ -383,8 +384,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const backendUrl = await getBackendUrl();
         console.log("[Background] 使用后端URL:", backendUrl);
 
-        // 使用前端指定的 endpoint，默认使用 AI问答智能体
-        const endpoint = msg.endpoint || "/sxzypt/scene_gateway/agent/open/4";
+        // 使用前端指定的 endpoint，默认使用统一智能体接口
+        const endpoint = msg.endpoint || "/sxzypt/py_talkHub/agent/agent";
         const res = await fetch(`${backendUrl}${endpoint}`, {
           method: "POST",
           headers: {
@@ -573,18 +574,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const uint8Array = new Uint8Array(msg.fileData);
         const blob = new Blob([uint8Array], { type: msg.fileType });
         
+        // 构建 param JSON 对象
+        const param = JSON.stringify({
+          session_id: msg.agentId,
+          agent_id: msg.agentId,
+          user_id: msg.agentId,
+          chat_type: "save",
+          requestId: msg.requestId,
+          dialog_id: msg.dialogId || "",
+        });
+
         // 构建 FormData
         const formData = new FormData();
+        formData.append("Content-Type", "application/json");
+        formData.append("param", param);
         formData.append("files", blob, msg.fileName);
-        formData.append("request_id", msg.requestId);
-        formData.append("agent_id", msg.agentId);
-        formData.append("chat_type", "save");
 
         // 获取当前可用的后端URL
         const backendUrl = await getBackendUrl();
 
-        // 发送请求到后端，使用 agentId 构建正确路径
-        const response = await fetch(`${backendUrl}/aisatr_server/sdk/agent/open/${msg.agentId}/uploadFiles`, {
+        // 发送请求到后端统一文件上传接口
+        const response = await fetch(`${backendUrl}/sxzypt/py_talkHub/agent/uploadFiles`, {
           method: "POST",
           body: formData,
         });
@@ -602,16 +612,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const result = await response.json();
         console.log("[Background] 文件上传响应:", result);
         
-        // 后端返回 code 为 0 表示成功，兼容 1000 也作为成功标识
-        if ((result.code === 0 || result.code === 1000) && result.result) {
-          const uploadedFile = result.result;
+        // 后端返回 code 为 1000 表示成功
+        if (result.code === 1000 && result.data && result.data.length > 0) {
           sendResponse({
             success: true,
             files: [{
-              fileId: uploadedFile.fileId,
-              imgUrl: null,  // 本地存储没有imgUrl，fileId作为唯一标识
-              fileName: uploadedFile.fileName,
-              fileSize: uploadedFile.fileSize
+              fileId: result.data[0],
+              fileName: msg.fileName
             }]
           });
         } else {

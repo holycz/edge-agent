@@ -527,9 +527,12 @@ async function handlePageAction(action) {
   const pageContext = isLeaderSummary ? await getApprovalPageContext() : await getCurrentPageContext(true);
 
   if (!pageContext || !pageContext.content) {
-    addMessage('bot', '无法获取当前网页内容，请确保您正在浏览一个可访问的网页。');
-    return;
-  }
+        const msg = isLeaderSummary
+            ? '未在当前页面找到公文正文或领导批示内容，请确保您正在浏览OA审批页面。'
+            : '无法获取当前网页内容，请确保您正在浏览一个可访问的网页。';
+        addMessage('bot', msg);
+        return;
+    }
 
   console.log('[Sidepanel] 成功获取页面内容，长度:', pageContext.content.length, '字符，元信息:', pageContext.metadata);
   updateContextStatus('正在分析...');
@@ -1025,16 +1028,16 @@ async function getApprovalPageContext() {
       }
     }
 
-    if (response && response.content) {
-      console.log("[Sidepanel] 获取到公文批示专用内容，长度:", response.content.length, "字符");
-      return {
-        content: response.content,
-        metadata: response.metadata || {}
-      };
-    } else {
-      console.log("[Sidepanel] 未获取到公文批示专用内容，回退到全页面内容");
-      return await getCurrentPageContext(true);
-    }
+        if (response && response.content && response.content.trim().length > 0) {
+            console.log("[Sidepanel] 获取到公文批示专用内容，长度:", response.content.length, "字符");
+            return {
+                content: response.content,
+                metadata: response.metadata || {}
+            };
+        } else {
+            console.log("[Sidepanel] 未获取到公文批示专用内容（正文/批示），无法总结");
+            return null;
+        }
   } catch (e) {
     console.error("[Sidepanel] 获取公文批示页面内容失败:", e);
     return null;

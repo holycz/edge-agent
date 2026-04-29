@@ -46,17 +46,20 @@ edge-agent/
 
 ### 2.2 智能体架构
 
-前端不再使用 `/api/build-prompt` 构建提示词，而是直接调用智能体接口：
+前端不再使用 `/api/build-prompt` 构建提示词，而是通过统一接口调用智能体：
 
-| 智能体ID | 接口路径 | 功能说明 | 对应前端操作 |
-|----------|----------|----------|--------------|
-| ac32fe9431b1444f8ac3cdf42901024e | `/sxzypt/scene_gateway/agent/open/ac32fe9431b1444f8ac3cdf42901024e` | 网页总结智能体 | 未选中文本时点击「总结该网页」 |
-| bbad433949b64fab8de7f1a26d6ab56c | `/sxzypt/scene_gateway/agent/open/bbad433949b64fab8de7f1a26d6ab56c` | 文本润色智能体 | 选中文本时点击「润色改写」 |
-| a03444b0e45d416fbc0a494b46a2c55b | `/sxzypt/scene_gateway/agent/open/a03444b0e45d416fbc0a494b46a2c55b` | 文本稽核智能体 | 选中文本时点击「稽核检查」 |
-| ddf09cedfcbd4d188adc528461a91392 | `/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392` | AI问答智能体（支持文件问答） | 页面对话输入问题 |
-| 205a099ade6a4c4fb454e11f96ee6a18 | `/sxzypt/scene_gateway/agent/open/205a099ade6a4c4fb454e11f96ee6a18` | 公文批示总结智能体 | 未选中文本时点击「总结领导批示」 |
+**统一接口路径**：`/sxzypt/py_talkHub/agent/agent`
+
+| 智能体ID | 功能说明 | 对应前端操作 |
+|----------|----------|--------------|
+| ac32fe9431b1444f8ac3cdf42901024e | 网页总结智能体 | 未选中文本时点击「总结该网页」 |
+| bbad433949b64fab8de7f1a26d6ab56c | 文本润色智能体 | 选中文本时点击「润色改写」 |
+| a03444b0e45d416fbc0a494b46a2c55b | 文本稽核智能体 | 选中文本时点击「稽核检查」 |
+| ddf09cedfcbd4d188adc528461a91392 | AI问答智能体（支持文件问答） | 页面对话输入问题 |
+| 205a099ade6a4c4fb454e11f96ee6a18 | 公文批示总结智能体 | 未选中文本时点击「总结领导批示」 |
 
 **注意**：
+- 所有智能体共用统一接口 `/sxzypt/py_talkHub/agent/agent`，通过请求体中的 `agent_id` 字段区分不同智能体。
 - 前端不直接存储或传输 API Key，所有 AI 请求都通过后端代理。
 - 后端是内部智能体平台的模拟适配层，前端请求格式与内部智能体接口对齐，部分参数（如 `AuthToken`）在当前后端中可能未实际使用，但必须保留以确保前端可无缝切换到内部智能体平台。
 
@@ -79,7 +82,7 @@ python run.py
 - **配置管理** (`config.py`): 从 `.env` 读取 API_KEY、API_URL、MODEL 等敏感配置。
 - **AI 流式代理** (`ai_client.py`): 通过 `httpx.AsyncClient` 向 AI API 发送 SSE 请求，解析 `reasoning_content` 等字段。
 - **提示词构建** (`prompts.py` + `prompt_builder.py`): 各智能体根据功能自动构建提示词。
-- **API 路由** (`routes.py`): 5个智能体接口（见上表）
+- **API 路由** (`routes.py`): 统一智能体接口 `/sxzypt/py_talkHub/agent/agent`，通过请求体 `agent_id` 区分不同智能体
 
 ### 3.3 环境变量配置 (.env)
 
@@ -134,11 +137,7 @@ data: {"choices": [{"delta":{"content":"end##end"}}]}              # 流结束
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/sxzypt/scene_gateway/agent/open/ac32fe9431b1444f8ac3cdf42901024e` | 网页总结智能体（SSE）|
-| POST | `/sxzypt/scene_gateway/agent/open/bbad433949b64fab8de7f1a26d6ab56c` | 文本润色智能体（SSE）|
-| POST | `/sxzypt/scene_gateway/agent/open/a03444b0e45d416fbc0a494b46a2c55b` | 文本稽核智能体（SSE）|
-| POST | `/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392` | AI问答智能体（SSE）|
-| POST | `/sxzypt/scene_gateway/agent/open/205a099ade6a4c4fb454e11f96ee6a18` | 公文批示总结智能体（SSE）|
+| POST | `/sxzypt/py_talkHub/agent/agent` | 统一智能体接口（SSE），通过 `agent_id` 区分 |
 
 ### 5.2 数据模型
 
@@ -146,16 +145,16 @@ data: {"choices": [{"delta":{"content":"end##end"}}]}              # 流结束
 
 ```json
 {
-  "requestId": "时间戳+6位随机数",
+  "request_id": "时间戳+6位随机数",
   "dialogId": "(yyyyMMddHHmmssSSS)+6位随机数，同一对话需保持相同",
-  "keyword": "用户输入内容（首次对话包含页面上下文，后续对话只含用户问题）",
+  "agent_id": "智能体ID",
+  "question": "用户输入内容（首次对话包含页面上下文，后续对话只含用户问题）",
   "stream": true,
-  "enable_thinking": true,
-  "page_cookies": {}
+  "enable_thinking": true
 }
 ```
 
-其中 `keyword` 字段在不同场景下的格式：
+其中 `question` 字段在不同场景下的格式：
 
 - **AI问答智能体首次对话**：
   ```

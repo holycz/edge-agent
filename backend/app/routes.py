@@ -1,18 +1,18 @@
-from typing import List, Optional
+import json
+import logging
 import re
-import os
+import time
 import uuid
-import shutil
 from pathlib import Path
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, JSONResponse
-from app.schemas import ChatRequest, AgentRequest, ChatMessage
+
 from app.ai_client import stream_chat
 from app.config import get_env
 from app.dialog_manager import dialog_manager
-import json
-import logging
+from app.schemas import ChatRequest, AgentRequest, ChatMessage
 
 # 上传文件存储目录
 UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
@@ -21,6 +21,8 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+UNIFIED_ENDPOINT = "/sxzypt/py_talkHub/agent/agent"
+
 
 def _check_api_key() -> bool:
     """检查 API Key 是否已配置"""
@@ -28,39 +30,35 @@ def _check_api_key() -> bool:
     return bool(api_key and api_key != "your_api_key_here")
 
 
-import time
-
-# 用于记录流开始时间
-_stream_start_time = None
-
-
-def format_sse_event(event: dict) -> str:
-    """格式化 SSE 事件为 OpenAI 流式格式"""
-    global _stream_start_time
+def format_sse_event(event: dict, stream_start_time: Optional[float] = None) -> str:
+    """格式化 SSE 事件为 OpenAI 流式格式
+    
+    Args:
+        event: 事件字典
+        stream_start_time: 流开始时间，用于计算性能指标
+    
+    Returns:
+        (格式化的SSE字符串, 更新后的stream_start_time或None)
+    """
+    data = None
 
     if event["type"] == "error":
         data = {"choices": [{"delta": {"error": event["error"]}}]}
     elif event["type"] == "done":
-        # 发送结束标记
         data = {"choices": [{"delta": {"content": "end##end"}}]}
-        _stream_start_time = None
     elif event["type"] == "chunk":
         content_type = event.get("content_type", "content")
         content = event.get("content", "")
 
-        # 初始化流开始时间
-        if _stream_start_time is None:
-            _stream_start_time = time.time()
+        if stream_start_time is None:
+            stream_start_time = time.time()
 
-        # 处理不同类型的内容
         if content_type == "think_start":
             data = {"choices": [{"delta": {"status": "processing"}}]}
         elif content_type == "think":
-            # 思考内容作为特殊标记发送（可选）
             data = {"choices": [{"delta": {"reasoning_content": content}}]}
         elif content_type == "think_end":
-            # 思考结束，发送性能指标
-            elapsed = time.time() - _stream_start_time
+            elapsed = time.time() - stream_start_time
             data = {
                 "choices": [
                     {
@@ -76,19 +74,21 @@ def format_sse_event(event: dict) -> str:
                 ]
             }
         else:
-            # 普通内容
             data = {"choices": [{"delta": {"content": content}}]}
     else:
-        # 默认处理
         data = {"choices": [{"delta": event}]}
 
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n", stream_start_time
 
 
-# ========== 智能体提示词配置 ==========
+def _check_api_key() -> bool:
+    """检查 API Key 是否已配置"""
+    api_key = get_env("API_KEY")
+    return bool(api_key and api_key != "your_api_key_here")
+
 
 AGENT_SYSTEM_PROMPTS = {
-    "1": """你是一位专业的网页内容总结专家。请基于当前网页的全部内容进行深度总结，要求：
+    "ac32fe9431b1444f8ac3cdf42901024e": """你是一位专业的网页内容总结专家。请基于当前网页的全部内容进行深度总结，要求：
 
 1. **页面主旨提炼**：用一句话概括页面核心内容
 2. **关键信息提取**：提取页面中的重要信息，包括但不限于：
@@ -100,10 +100,10 @@ AGENT_SYSTEM_PROMPTS = {
 4. **突出重点**：标记出需要特别关注的内容
 5. **简洁明了**：避免冗余，保留核心信息
 
-请用中文输出，采用 Markdown 格式。
+请用中文输出。
 
 网页内容如下：""",
-    "2": """你是一位资深的文字编辑和写作专家。请对用户提供的文本进行润色改写，要求：
+    "bbad433949b64fab8de7f1a26d6ab56c": """你是一位资深的文字编辑和写作专家。请对用户提供的文本进行润色改写，要求：
 
 1. **保持原意**：确保改写后的文本与原意完全一致，不增删核心信息
 2. **优化表达**：
@@ -124,7 +124,7 @@ AGENT_SYSTEM_PROMPTS = {
 请输出改写后的完整文本，并在最后简要说明主要改进点（用列表形式）。
 
 原始文本如下：""",
-    "3": """你是一位严谨的文字校对专家。请对用户提供的文本进行全面稽核检查，要求：
+    "a03444b0e45d416fbc0a494b46a2c55b": """你是一位严谨的文字校对专家。请对用户提供的文本进行全面稽核检查，要求：
 
 1. **错别字检查**：找出并标出所有错别字、错用字、形近字错误
 2. **语句通顺性**：
@@ -150,7 +150,7 @@ AGENT_SYSTEM_PROMPTS = {
 **修改建议版本**：给出修改后的完整文本
 
 原始文本如下：""",
-    "4": None,  # AI问答智能体没有固定的 system 提示词，直接使用前端传来的完整 messages
+    "ddf09cedfcbd4d188adc528461a91392": None,  # AI问答智能体没有固定的 system 提示词，直接使用前端传来的完整 messages
     "205a099ade6a4c4fb454e11f96ee6a18": """请从以下OA审批意见中，提取并总结与我相关的领导批示。
 
 【重要提示】
@@ -192,13 +192,12 @@ def _build_chat_request(
 ) -> ChatRequest:
     """从 AgentRequest 构建 ChatRequest 用于流式调用"""
     return ChatRequest(
-        requestId=request.requestId,
-        dialogId=request.dialogId,
-        keyword=request.keyword,
+        request_id=request.request_id,
+        dialogId=request.dialog_id,
+        keyword=request.question,
         messages=messages,
-        stream=request.stream,
-        enable_thinking=request.enable_thinking,
-        # 传递文件引用相关字段
+        stream=True,
+        enable_thinking=None,
         referenced_objects=request.referenced_objects,
         referenced_object_type=request.referenced_object_type,
         session_id=request.session_id,
@@ -255,384 +254,232 @@ def _parse_keyword_for_qa(
     return None, keyword.strip()
 
 
-# ========== 智能体接口 ==========
-
-
-@router.post("/sxzypt/scene_gateway/agent/open/ac32fe9431b1444f8ac3cdf42901024e")
-async def summarize_page_agent(request: AgentRequest):
-    """网页总结智能体 - 自动总结当前页面内容
-
-    请求体：
-    {
-        "requestId": "时间戳+6位随机数",
-        "dialogId": "(yyyyMMddHHmmssSSS)+6位随机数",
-        "keyword": "网页内容（用户输入）",
-        "stream": true,
-        "enable_thinking": true
-    }
-
-    后端：将 keyword 作为用户输入内容，加上 system prompt 后调用AI
-    """
-    if not _check_api_key():
-        raise HTTPException(status_code=503, detail="API Key 未配置")
-
-    # keyword 即为用户输入的网页内容
-    user_content = request.keyword
-
-    # 组装完整的 messages（后端添加 system 提示词）
-    system_prompt = AGENT_SYSTEM_PROMPTS["1"]
-    messages = [
-        ChatMessage(role="system", content=f"{system_prompt}\n\n{user_content}")
-    ]
-
-    # 构建内部使用的 ChatRequest
-    chat_request = _build_chat_request(request, messages)
-
-    async def event_generator():
-        async for event in stream_chat(chat_request):
-            yield format_sse_event(event)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.post("/sxzypt/scene_gateway/agent/open/bbad433949b64fab8de7f1a26d6ab56c")
-async def rewrite_agent(request: AgentRequest):
-    """文本润色智能体 - 润色改写给定的文本
-
-    请求体：
-    {
-        "requestId": "时间戳+6位随机数",
-        "dialogId": "(yyyyMMddHHmmssSSS)+6位随机数",
-        "keyword": "需要润色的文本（用户输入）",
-        "stream": true,
-        "enable_thinking": true
-    }
-
-    后端：将 keyword 作为用户输入文本，加上润色相关的 system prompt 后调用AI
-    """
-    if not _check_api_key():
-        raise HTTPException(status_code=503, detail="API Key 未配置")
-
-    # keyword 即为用户输入的文本
-    user_content = request.keyword
-
-    # 组装完整的 messages
-    system_prompt = AGENT_SYSTEM_PROMPTS["2"]
-    messages = [
-        ChatMessage(role="system", content=system_prompt),
-        ChatMessage(role="user", content=user_content),
-    ]
-
-    # 构建内部使用的 ChatRequest
-    chat_request = _build_chat_request(request, messages)
-
-    async def event_generator():
-        async for event in stream_chat(chat_request):
-            yield format_sse_event(event)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.post("/sxzypt/scene_gateway/agent/open/a03444b0e45d416fbc0a494b46a2c55b")
-async def proofread_agent(request: AgentRequest):
-    """文本稽核智能体 - 稽核检查给定文本
-
-    请求体：
-    {
-        "requestId": "时间戳+6位随机数",
-        "dialogId": "(yyyyMMddHHmmssSSS)+6位随机数",
-        "keyword": "需要稽核的文本（用户输入）",
-        "stream": true,
-        "enable_thinking": true
-    }
-
-    后端：将 keyword 作为用户输入文本，加上稽核相关的 system prompt 后调用AI
-    """
-    if not _check_api_key():
-        raise HTTPException(status_code=503, detail="API Key 未配置")
-
-    # keyword 即为用户输入的文本
-    user_content = request.keyword
-
-    # 组装完整的 messages
-    system_prompt = AGENT_SYSTEM_PROMPTS["3"]
-    messages = [
-        ChatMessage(role="system", content=system_prompt),
-        ChatMessage(role="user", content=user_content),
-    ]
-
-    # 构建内部使用的 ChatRequest
-    chat_request = _build_chat_request(request, messages)
-
-    async def event_generator():
-        async for event in stream_chat(chat_request):
-            yield format_sse_event(event)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.post("/sxzypt/scene_gateway/agent/open/ddf09cedfcbd4d188adc528461a91392")
-async def qa_agent(request: AgentRequest):
-    """AI问答智能体 - 基于页面内容的问答（支持多轮对话，后端维护上下文）
-
-    请求体：
-    {
-        "requestId": "时间戳+6位随机数",
-        "dialogId": "(yyyyMMddHHmmssSSS)+6位随机数，同一对话需保持相同",
-        "keyword": "用户当前问题（前端只需发送问题本身，上下文由后端管理）",
-        "stream": true,
-        "enable_thinking": true
-    }
-
-    后端：
-    1. 根据 dialogId 获取或创建对话会话
-    2. 首次对话时从 keyword 中提取页面上下文并保存
-    3. 添加用户消息到对话历史
-    4. 构建完整的消息列表（包含页面上下文和历史对话）调用AI
-    5. 将AI回复添加到对话历史
-    6. 返回流式响应
-
-    注意：前端只需发送当前问题和页面上下文（第一次），历史对话由后端维护
-    """
-    if not _check_api_key():
-        raise HTTPException(status_code=503, detail="API Key 未配置")
-    # if not request.dialogId:
-    #     raise HTTPException(
-    #         status_code=400, detail="AI问答模式必须提供 dialogId 以维护对话上下文"
-    #     )
-
-    # 1. 获取或创建对话会话
-    session = dialog_manager.get_or_create_session(request.dialogId)
-
-    # 2. 解析 keyword，提取页面上下文和用户问题
-    page_context, user_question = _parse_keyword_for_qa(request.keyword, session)
-
-    # 如果是首次对话且提取到了页面上下文，保存到会话
-    if page_context and len(session.messages) == 0:
-        session.set_page_context(page_context)
-        # logger.info(
-        #     f"[QA Agent] 首次对话，保存页面上下文到会话 {request.dialogId}, 长度: {len(page_context)}"
-        # )
-    logger.info(f"[QA Agent] 首次对话，保存页面上下文到会话 {request.keyword}")
-
-    # 3. 添加用户问题到对话历史
-    session.add_message("user", user_question)
-    # logger.info(
-    #     f"[QA Agent] 添加用户消息到会话 {request.dialogId}, 当前消息数: {len(session.messages)}"
-    # )
-
-    # 4. 构建用于 API 调用的消息列表
-    messages = session.get_messages_for_api()
-    # logger.info(
-    #     f"[QA Agent] 会话 {request.dialogId} 构建消息列表: {len(messages)} 条 (含页面上下文)"
-    # )
-
-    # 5. 构建内部 ChatRequest
-    chat_request = _build_chat_request(request, messages)
-
-    # 6. 流式调用并收集AI回复
-    accumulated_response = ""
-
-    async def event_generator():
-        nonlocal accumulated_response
-        async for event in stream_chat(chat_request):
-            # 收集AI回复内容
-            if event.get("type") == "chunk":
-                content = event.get("content", "")
-                if content and event.get("content_type") == "content":
-                    accumulated_response += content
-            yield format_sse_event(event)
-
-        # 流结束后，将AI回复添加到对话历史
-        if accumulated_response:
-            session.add_message("assistant", accumulated_response)
-            # logger.info(
-            #     f"[QA Agent] 添加AI回复到会话 {request.dialogId}, 长度: {len(accumulated_response)}, 当前消息数: {len(session.messages)}"
-            # )
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.post("/sxzypt/scene_gateway/agent/open/205a099ade6a4c4fb454e11f96ee6a18")
-async def leader_comments_agent(request: AgentRequest):
-    """公文批示总结智能体 - 总结领导批示
-
-    请求体：
-    {
-        "requestId": "时间戳+6位随机数",
-        "dialogId": "(yyyyMMddHHmmssSSS)+6位随机数",
-        "keyword": "个人信息前缀 + OA审批页面内容（由前端构建）",
-        "stream": true,
-        "enable_thinking": true
-    }
-
-    后端：将 keyword 作为页面内容，加上批示总结的 system prompt 调用AI
-    个人信息由前端在 keyword 中传递，格式："请记住，我的姓名：XXX；...\n\n请基于以上信息分析以下批示内容：\n\n[原始页面内容]"
-    """
-    if not _check_api_key():
-        raise HTTPException(status_code=503, detail="API Key 未配置")
-
-    # keyword 即为用户输入的页面内容（包含前端附加的个人信息前缀）
-    user_content = request.keyword
-
-    # 使用 system prompt 模板（保留环境变量回退兼容性）
-    system_prompt = AGENT_SYSTEM_PROMPTS["205a099ade6a4c4fb454e11f96ee6a18"]
-
-    # 组装完整的 messages
-    messages = [
-        ChatMessage(role="system", content=f"{system_prompt}\n\n{user_content}")
-    ]
-
-    # 构建内部使用的 ChatRequest
-    chat_request = _build_chat_request(request, messages)
-
-    async def event_generator():
-        async for event in stream_chat(chat_request):
-            yield format_sse_event(event)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-# ========== 文件上传接口（为每个智能体提供独立的上传路径） ==========
-
-# 智能体ID映射
-AGENT_ID_MAPPING = {
-    "ac32fe9431b1444f8ac3cdf42901024e": "ac32fe9431b1444f8ac3cdf42901024e",  # 网页总结
-    "bbad433949b64fab8de7f1a26d6ab56c": "bbad433949b64fab8de7f1a26d6ab56c",  # 文本润色
-    "a03444b0e45d416fbc0a494b46a2c55b": "a03444b0e45d416fbc0a494b46a2c55b",  # 文本稽核
-    "ddf09cedfcbd4d188adc528461a91392": "ddf09cedfcbd4d188adc528461a91392",  # AI问答
-    "205a099ade6a4c4fb454e11f96ee6a18": "205a099ade6a4c4fb454e11f96ee6a18",  # 公文批示总结
-}
-
-
-def _get_agent_id_from_path(path: str) -> str:
-    """从URL路径中提取智能体ID"""
-    # 路径格式: /aisatr_server/sdk/agent/open/{agent_id}/uploadFiles
-    parts = path.split("/")
-    for part in parts:
-        if part in AGENT_ID_MAPPING:
-            return AGENT_ID_MAPPING[part]
-    return AGENT_ID_MAPPING["ddf09cedfcbd4d188adc528461a91392"]  # 默认返回AI问答智能体ID
-
-
-async def _upload_file_to_service(
-    file: UploadFile,
-    request_id: str,
-    agent_id: str,
-    chat_type: str = "save"
-) -> dict:
-    """通用文件上传函数 - 文件存储在本地
+def _build_messages_for_agent(agent_id: str, question: str) -> List[ChatMessage]:
+    """根据智能体ID构建对应的消息列表"""
+    system_prompt = AGENT_SYSTEM_PROMPTS.get(agent_id)
     
-    返回格式:
+    if agent_id == "ddf09cedfcbd4d188adc528461a91392":  # AI问答智能体
+        return []
+    elif agent_id == "ac32fe9431b1444f8ac3cdf42901024e":  # 网页总结
+        return [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=question),
+        ]
+    elif agent_id == "205a099ade6a4c4fb454e11f96ee6a18":  # 公文批示总结
+        return [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=question),
+        ]
+    else:  # 文本润色、文本稽核等有固定 system + user 格式
+        return [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=question),
+        ]
+
+
+# ========== 统一智能体接口 ==========
+
+
+@router.post("/sxzypt/py_talkHub/agent/agent")
+async def unified_agent(request: AgentRequest):
+    """统一智能体接口 - 通过 agent_id 区分不同智能体
+
+    请求体：
     {
-        "code": 0,
-        "message": "文件上传成功",
-        "result": {
-            "fileId": "uuid-string",
-            "fileName": "original_filename.pdf",
-            "filePath": "/path/to/file"
-        }
+        "request_id": "时间戳+6位随机数",
+        "dialog_id": "(yyyyMMddHHmmssSSS)+6位随机数，同一对话需保持相同",
+        "agent_id": "智能体ID",
+        "user_id": "用户ID",
+        "question": "用户输入的问题/文本内容",
+        "use_history": "true",
+        "model_id": "",
+        "ifInternet": false,
+        "ifCallback": true,
+        "referenced_objects": "{\"file\":[{\"file_id\":\"xxx\",\"file_name\":\"xxx\",\"file_size\":0}]}",
+        "referenced_object_type": "file",
+        "session_id": "会话ID",
+        "agent_state": "save"
     }
+
+    智能体ID列表：
+    - ac32fe9431b1444f8ac3cdf42901024e: 网页总结
+    - bbad433949b64fab8de7f1a26d6ab56c: 文本润色
+    - a03444b0e45d416fbc0a494b46a2c55b: 文本稽核
+    - ddf09cedfcbd4d188adc528461a91392: AI问答（支持多轮对话）
+    - 205a099ade6a4c4fb454e11f96ee6a18: 公文批示总结
     """
-    try:
-        # 生成唯一的 fileId
-        file_id = str(uuid.uuid4())
-        
-        # 构建存储路径: uploads/{agent_id}/{request_id}/{file_id}_{filename}
-        save_dir = UPLOAD_DIR / agent_id / request_id
-        save_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 安全文件名处理（去除不合法字符）
-        safe_filename = re.sub(r'[^\w\s.-]', '_', file.filename or "unnamed")
-        save_path = save_dir / f"{file_id}_{safe_filename}"
-        
-        # 读取并保存文件内容
-        file_content = await file.read()
-        with open(save_path, "wb") as f:
-            f.write(file_content)
-        
-        file_size = len(file_content)
-        logger.info(f"[FileUpload] 文件上传成功: {file.filename} -> {save_path}, size: {file_size} bytes, agent_id: {agent_id}")
-        
-        # 返回前端需要的格式
-        return {
-            "code": 0,
-            "message": "文件上传成功",
-            "result": {
-                "fileId": file_id,
-                "fileName": file.filename or "unnamed",
-                "filePath": str(save_path),
-                "fileSize": file_size
-            }
-        }
-    except Exception as e:
-        logger.error(f"[FileUpload] 文件保存失败: {str(e)}")
-        raise
+    if not _check_api_key():
+        raise HTTPException(status_code=503, detail="API Key 未配置")
+
+    # 获取并验证智能体ID
+    agent_id = request.agent_id
+    if not agent_id:
+        raise HTTPException(status_code=400, detail="缺少 agent_id 参数")
+
+    if agent_id not in AGENT_SYSTEM_PROMPTS:
+        raise HTTPException(status_code=400, detail=f"未知智能体ID: {agent_id}")
+
+    # 获取用户问题
+    question = request.question
+    if not question:
+        raise HTTPException(status_code=400, detail="缺少 question 参数")
+
+    # 根据不同智能体类型处理
+    if agent_id == "ddf09cedfcbd4d188adc528461a91392":  # AI问答智能体
+        # 1. 获取或创建对话会话
+        session = dialog_manager.get_or_create_session(request.dialog_id)
+
+        # 2. 解析 question，提取页面上下文和用户问题
+        page_context, user_question = _parse_keyword_for_qa(question, session)
+
+        # 3. 如果是首次对话且提取到了页面上下文，保存到会话
+        if page_context and len(session.messages) == 0:
+            session.set_page_context(page_context)
+            logger.info(f"[QA Agent] 首次对话，保存页面上下文到会话 {question[:50]}...")
+
+        # 4. 添加用户问题到对话历史
+        session.add_message("user", user_question)
+
+        # 5. 构建用于 API 调用的消息列表
+        messages = session.get_messages_for_api()
+
+        # 6. 构建 ChatRequest
+        chat_request = _build_chat_request(request, messages)
+
+        # 7. 流式调用并收集AI回复
+        accumulated_response = ""
+
+        async def event_generator_qa():
+            nonlocal accumulated_response
+            stream_start_time = None
+            async for event in stream_chat(chat_request):
+                if event.get("type") == "chunk":
+                    content = event.get("content", "")
+                    if content and event.get("content_type") == "content":
+                        accumulated_response += content
+                sse_str, stream_start_time = format_sse_event(event, stream_start_time)
+                yield sse_str
+
+            # 流结束后，将AI回复添加到对话历史
+            if accumulated_response:
+                session.add_message("assistant", accumulated_response)
+
+        return StreamingResponse(
+            event_generator_qa(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    else:  # 其他智能体（网页总结、文本润色、文本稽核、公文批示总结）
+        # 构建消息列表
+        messages = _build_messages_for_agent(agent_id, question)
+
+        # 构建内部使用的 ChatRequest
+        chat_request = _build_chat_request(request, messages)
+
+        async def event_generator():
+            stream_start_time = None
+            async for event in stream_chat(chat_request):
+                sse_str, stream_start_time = format_sse_event(event, stream_start_time)
+                yield sse_str
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
 
-@router.post("/aisatr_server/sdk/agent/open/ac32fe9431b1444f8ac3cdf42901024e/uploadFiles")
-async def upload_files_summarize(
+# ========== 文件上传接口 ==========
+
+
+@router.post("/sxzypt/py_talkHub/agent/uploadFiles")
+async def upload_files(
     files: UploadFile = File(...),
-    request_id: str = Form(..., alias="request_id"),
-    chat_type: str = Form(default="save", alias="chat_type"),
+    param: str = Form(...),
 ):
-    """网页总结智能体 - 文件上传接口
+    """统一文件上传接口 - 通过 param 中的 agent_id 区分不同智能体
     
     请求示例:
-    POST /aisatr_server/sdk/agent/open/ac32fe9431b1444f8ac3cdf42901024e/uploadFiles
+    POST /sxzypt/py_talkHub/agent/uploadFiles
     Content-Type: multipart/form-data
     
     form-data:
+    - Content-Type: application/json
+    - param: {"session_id":"xxx","agent_id":"xxx","user_id":"xxx","chat_type":"save","requestId":"xxx","dialog_id":"xxx"}
     - files: 文件
-    - request_id: 请求流水号
-    - chat_type: save（默认）
     
-    文件保存到本地: backend/uploads/{agent_id}/{request_id}/
+    返回格式:
+    {
+        "code": 1000,
+        "message": "上传成功",
+        "timestamp": null,
+        "data": ["uuid-string"]
+    }
     """
-    agent_id = AGENT_ID_MAPPING["ac32fe9431b1444f8ac3cdf42901024e"]
+    # 解析 param JSON
     try:
-        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
-        return JSONResponse(content=result, status_code=200)
+        param_data = json.loads(param)
+    except json.JSONDecodeError:
+        return JSONResponse(
+            content={"code": 4001, "message": "param 参数格式错误，需要合法 JSON"},
+            status_code=400,
+        )
+
+    agent_id = param_data.get("agent_id")
+    request_id = param_data.get("requestId", "")
+    dialog_id = param_data.get("dialog_id", "")
+
+    # 验证 agent_id
+    if not agent_id:
+        return JSONResponse(
+            content={"code": 4001, "message": "缺少 agent_id 参数"},
+            status_code=400,
+        )
+
+    if agent_id not in AGENT_SYSTEM_PROMPTS:
+        return JSONResponse(
+            content={"code": 4002, "message": f"未知智能体ID: {agent_id}"},
+            status_code=400,
+        )
+
+    try:
+        # 生成随机的文件 UUID
+        file_uuid = uuid.uuid4().hex
+
+        # 构建存储路径: uploads/{agent_id}/{request_id}/{file_uuid}_{filename}
+        save_dir = UPLOAD_DIR / agent_id / request_id
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        # 安全文件名处理
+        safe_filename = re.sub(r'[^\w\s.-]', '_', files.filename or "unnamed")
+        save_path = save_dir / f"{file_uuid}_{safe_filename}"
+
+        # 读取并保存文件内容
+        file_content = await files.read()
+        with open(save_path, "wb") as f:
+            f.write(file_content)
+
+        file_size = len(file_content)
+        logger.info(f"[FileUpload] 文件上传成功: {files.filename} -> {save_path}, size: {file_size} bytes, agent_id: {agent_id}, file_uuid: {file_uuid}")
+
+        return JSONResponse(
+            content={
+                "code": 1000,
+                "message": "上传成功",
+                "timestamp": None,
+                "data": [file_uuid],
+            },
+            status_code=200,
+        )
     except Exception as e:
         logger.error(f"[FileUpload] 失败: {str(e)}")
         return JSONResponse(
@@ -640,82 +487,3 @@ async def upload_files_summarize(
             status_code=500,
         )
 
-
-@router.post("/aisatr_server/sdk/agent/open/bbad433949b64fab8de7f1a26d6ab56c/uploadFiles")
-async def upload_files_rewrite(
-    files: UploadFile = File(...),
-    request_id: str = Form(..., alias="request_id"),
-    chat_type: str = Form(default="save", alias="chat_type"),
-):
-    """文本润色智能体 - 文件上传接口"""
-    agent_id = AGENT_ID_MAPPING["bbad433949b64fab8de7f1a26d6ab56c"]
-    try:
-        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
-        return JSONResponse(content=result, status_code=200)
-    except Exception as e:
-        logger.error(f"[FileUpload] 失败: {str(e)}")
-        return JSONResponse(
-            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
-            status_code=500,
-        )
-
-
-@router.post("/aisatr_server/sdk/agent/open/a03444b0e45d416fbc0a494b46a2c55b/uploadFiles")
-async def upload_files_proofread(
-    files: UploadFile = File(...),
-    request_id: str = Form(..., alias="request_id"),
-    chat_type: str = Form(default="save", alias="chat_type"),
-):
-    """文本稽核智能体 - 文件上传接口"""
-    agent_id = AGENT_ID_MAPPING["a03444b0e45d416fbc0a494b46a2c55b"]
-    try:
-        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
-        return JSONResponse(content=result, status_code=200)
-    except Exception as e:
-        logger.error(f"[FileUpload] 失败: {str(e)}")
-        return JSONResponse(
-            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
-            status_code=500,
-        )
-
-
-@router.post("/aisatr_server/sdk/agent/open/ddf09cedfcbd4d188adc528461a91392/uploadFiles")
-async def upload_files_qa(
-    files: UploadFile = File(...),
-    request_id: str = Form(..., alias="request_id"),
-    chat_type: str = Form(default="save", alias="chat_type"),
-):
-    """AI问答智能体 - 文件上传接口（默认智能体）
-    
-    这是主要使用的文件上传接口，支持文件问答功能。
-    文件保存到本地: backend/uploads/{agent_id}/{request_id}/
-    """
-    agent_id = AGENT_ID_MAPPING["ddf09cedfcbd4d188adc528461a91392"]
-    try:
-        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
-        return JSONResponse(content=result, status_code=200)
-    except Exception as e:
-        logger.error(f"[FileUpload] 失败: {str(e)}")
-        return JSONResponse(
-            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
-            status_code=500,
-        )
-
-
-@router.post("/aisatr_server/sdk/agent/open/205a099ade6a4c4fb454e11f96ee6a18/uploadFiles")
-async def upload_files_leader_comments(
-    files: UploadFile = File(...),
-    request_id: str = Form(..., alias="request_id"),
-    chat_type: str = Form(default="save", alias="chat_type"),
-):
-    """公文批示总结智能体 - 文件上传接口"""
-    agent_id = AGENT_ID_MAPPING["205a099ade6a4c4fb454e11f96ee6a18"]
-    try:
-        result = await _upload_file_to_service(files, request_id, agent_id, chat_type)
-        return JSONResponse(content=result, status_code=200)
-    except Exception as e:
-        logger.error(f"[FileUpload] 失败: {str(e)}")
-        return JSONResponse(
-            content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
-            status_code=500,
-        )
