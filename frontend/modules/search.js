@@ -339,20 +339,22 @@ function jumpToSearchResult(resultIndex, sessionId) {
   const result = searchResults[resultIndex];
   if (!result) return;
   
-  // 切换到目标会话
-  SessionManager.switchSession(sessionId);
-  currentSessionId = sessionId;
-  conversationHistory = result.session.messages ? [...result.session.messages] : [];
+  // 清空搜索
+  clearSearch();
+  searchInput.value = '';
+  searchClearBtn.style.display = 'none';
+  
+  // 切换到目标会话（switchSession 内部会设置 conversationHistory）
+  const session = SessionManager.switchSession(sessionId);
+  if (!session) {
+    console.error('[Search] 找不到目标会话:', sessionId);
+    return;
+  }
   
   // 更新UI
   renderSessionList();
   renderConversationHistory();
   updateHeaderTitle();
-  
-  // 清空搜索
-  clearSearch();
-  searchInput.value = '';
-  searchClearBtn.style.display = 'none';
   
   // 折叠侧边栏以显示消息
   const sidebar = document.getElementById('ai-sidebar-left');
@@ -360,10 +362,10 @@ function jumpToSearchResult(resultIndex, sessionId) {
     sidebar.classList.add('collapsed');
   }
   
-  // 高亮目标消息
+  // 高亮目标消息（等待 DOM 渲染完成）
   setTimeout(() => {
     highlightMessage(result.messageIndex);
-  }, 100);
+  }, 150);
   
   console.log(`[Search] 跳转到会话 ${sessionId} 的第 ${result.messageIndex} 条消息`);
 }
