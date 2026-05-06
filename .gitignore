@@ -1,0 +1,29 @@
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+backend.log
+backend.pid
+backend/backend.log
+backend/server.log
+
+# 临时文件
+*.txt
+test.sh
+test.txt
+测试文件.txt
+
+# 上传文件
+backend/uploads/
+
+# 证书文件
+*.pem
+frontend.pem
+
+# IDE配置
+.idea/
+
+# 其他
+移点通AI助手-用户手册.md
