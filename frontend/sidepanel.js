@@ -1,10 +1,59 @@
+/**
+ * Side Panel UI Logic
+ * 负责侧边栏界面交互、会话管理、智能体调用等核心功能
+ * @module sidepanel
+ */
+
+// ========== 消息类型常量 ==========
+const MESSAGE_TYPES = {
+  GET_BACKEND_URL: 'GET_BACKEND_URL',
+  API_STREAM_REQUEST: 'API_STREAM_REQUEST',
+  ABORT_STREAM: 'ABORT_STREAM',
+  STREAM_CHUNK: 'STREAM_CHUNK',
+  STREAM_DONE: 'STREAM_DONE',
+  STREAM_ABORTED: 'STREAM_ABORTED',
+  STREAM_ERROR: 'STREAM_ERROR',
+  GET_PAGE_CONTEXT: 'GET_PAGE_CONTEXT',
+  GET_APPROVAL_PAGE_CONTENT: 'GET_APPROVAL_PAGE_CONTENT',
+  PAGE_CONTENT_CHANGED: 'PAGE_CONTENT_CHANGED',
+  UPLOAD_FILE: 'UPLOAD_FILE',
+};
+
+const AGENT_IDS = {
+  CHAT: 'ddf09cedfcbd4d188adc528461a91392',
+  SUMMARIZE_PAGE: 'ac32fe9431b1444f8ac3df42901024e',
+  REWRITE: 'bbad433949b64fab8de7f1a26d6ab56c',
+  PROOFREAD: 'a03444b0e45d416fbc0a494b46a2c55b',
+  SUMMARIZE_LEADER: '205a099ade6a4c4fb454e11f96ee6a18',
+};
+
+const STREAM_CONTENT_TYPES = {
+  THINK_START: 'think_start',
+  THINK: 'think',
+  THINK_END: 'think_end',
+  CONTENT: 'content',
+};
+
+const API_ENDPOINTS = {
+  AGENT: '/sxzypt/py_talkHub/agent/agent',
+};
+
+const EXCLUDED_PAGE_PATTERNS = [
+  'chrome://', 'chrome-extension://', 'edge://', 'file://', 'about:', 'data:'
+];
+
+const FILE_LIMITS = {
+  MAX_SIZE: 50 * 1024 * 1024,
+  MAX_HISTORY_RESPONSE_LENGTH: 8000,
+};
+
+// ========== 默认配置 ==========
 const DEFAULT_CONFIG = {
   useContext: true,
   enableDoubleClick: false,
   maxHistoryRounds: 5,
   myName: '',
   otherInfo: '',
-  // 注意：API配置已从后端移除，由后端 .env 统一管理
 };
 
 // ========== 统一接口参数生成工具 ==========
@@ -38,26 +87,133 @@ function generateDialogId() {
 
 // ========== 会话与智能体映射管理 ==========
 // 每个会话(dialogId)对应一个智能体类型
-// 默认智能体：'4' (AI问答智能体)
-const AGENT_TYPES = {
-  SUMMARIZE_PAGE: 'ac32fe9431b1444f8ac3cdf42901024e',     // 网页总结
-  REWRITE: 'bbad433949b64fab8de7f1a26d6ab56c',            // 文本润色
-  PROOFREAD: 'a03444b0e45d416fbc0a494b46a2c55b',          // 文本稽核
-  CHAT: 'ddf09cedfcbd4d188adc528461a91392',               // AI问答（默认）
-  SUMMARIZE_LEADER: '205a099ade6a4c4fb454e11f96ee6a18',  // 公文批示总结
-};
+// 默认智能体：CHAT (AI问答智能体)
+const AGENT_TYPES = AGENT_IDS; // 使用统一常量
 
 // ========== 智能体配置 ==========
 const FEATURE_PROMPTS = {
-  summarize: { label: '总结', icon: '📝', agentId: 'ac32fe9431b1444f8ac3cdf42901024e' },
-  rewrite: { label: '润色改写', icon: '✨', agentId: 'bbad433949b64fab8de7f1a26d6ab56c' },
-  proofread: { label: '稽核检查', icon: '🔍', agentId: 'a03444b0e45d416fbc0a494b46a2c55b' },
-  summarizePage: { label: '总结该网页', icon: '📄', agentId: 'ac32fe9431b1444f8ac3cdf42901024e' },
-  summarizeLeaderComments: { label: '总结领导批示', icon: '👔', agentId: '205a099ade6a4c4fb454e11f96ee6a18' },
-  pageRewrite: { label: '网页文本润色', icon: '✨', agentId: 'bbad433949b64fab8de7f1a26d6ab56c' },
-  pageProofread: { label: '网页文本稽核', icon: '🔍', agentId: 'a03444b0e45d416fbc0a494b46a2c55b' },
-  pageAsk: { label: '网页AI问答', icon: '💬', agentId: 'ddf09cedfcbd4d188adc528461a91392' },
+  summarize: { label: '总结', icon: '📝', agentId: AGENT_IDS.SUMMARIZE_PAGE },
+  rewrite: { label: '润色改写', icon: '✨', agentId: AGENT_IDS.REWRITE },
+  proofread: { label: '稽核检查', icon: '🔍', agentId: AGENT_IDS.PROOFREAD },
+  summarizePage: { label: '总结该网页', icon: '📄', agentId: AGENT_IDS.SUMMARIZE_PAGE },
+  summarizeLeaderComments: { label: '总结领导批示', icon: '👔', agentId: AGENT_IDS.SUMMARIZE_LEADER },
+  pageRewrite: { label: '网页文本润色', icon: '✨', agentId: AGENT_IDS.REWRITE },
+  pageProofread: { label: '网页文本稽核', icon: '🔍', agentId: AGENT_IDS.PROOFREAD },
+  pageAsk: { label: '网页AI问答', icon: '💬', agentId: AGENT_IDS.CHAT },
 };
+
+// ========== 自定义智能体管理 ==========
+let customAgents = [];
+
+const CustomAgentManager = {
+  async load() {
+    try {
+      const data = await chrome.storage.local.get(['customAgents']);
+      customAgents = data.customAgents || [];
+      console.log('[CustomAgentManager] 加载自定义智能体:', customAgents.length);
+    } catch (e) {
+      console.error('[CustomAgentManager] 加载失败:', e);
+      customAgents = [];
+    }
+  },
+
+  async save() {
+    try {
+      await chrome.storage.local.set({ customAgents });
+      console.log('[CustomAgentManager] 保存成功:', customAgents.length);
+    } catch (e) {
+      console.error('[CustomAgentManager] 保存失败:', e);
+    }
+  },
+
+  add(agent) {
+    customAgents.push(agent);
+    return this.save();
+  },
+
+  remove(agentId) {
+    const index = customAgents.findIndex(a => a.id === agentId);
+    if (index > -1) {
+      customAgents.splice(index, 1);
+      return this.save();
+    }
+    return Promise.resolve();
+  },
+
+  getAgentById(agentId) {
+    return customAgents.find(a => a.id === agentId) || null;
+  },
+
+  getAll() {
+    return customAgents;
+  },
+
+  isCustomAgent(agentId) {
+    return customAgents.some(a => a.id === agentId);
+  },
+
+  getAgentKey(agentId) {
+    const agent = this.getAgentById(agentId);
+    return agent ? agent.key : null;
+  }
+};
+
+async function verifyAgent(agentId, agentKey) {
+  try {
+    const backendUrl = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'GET_BACKEND_URL' }, (response) => {
+        resolve(response?.url || '');
+      });
+    });
+
+    if (!backendUrl) {
+      return { success: false, message: '无法获取后端服务地址' };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(`${backendUrl}/sxzypt/py_talkHub/agent/agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'AuthToken': agentKey,
+      },
+      body: JSON.stringify({
+        request_id: 'verify-' + Date.now(),
+        dialog_id: 'verify-' + Date.now(),
+        agent_id: agentId,
+        user_id: agentId,
+        question: '你好',
+        use_history: 'false',
+        ifInternet: false,
+        ifCallback: true,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.status === 401 || response.status === 403) {
+      return { success: false, message: '验证失败：Key无效或已过期' };
+    }
+
+    if (response.status === 404) {
+      return { success: false, message: '验证失败：智能体ID不存在' };
+    }
+
+    if (response.ok || response.status === 200) {
+      return { success: true, message: '验证成功' };
+    }
+
+    return { success: true, message: `服务已响应（状态码: ${response.status}），智能体可能可用` };
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      return { success: false, message: '验证超时，请检查网络连接' };
+    }
+    return { success: false, message: `连接失败: ${e.message}` };
+  }
+}
 
 function getAgentLabel(agentType) {
   if (agentType === AGENT_TYPES.CHAT) return 'AI问答';
@@ -65,6 +221,8 @@ function getAgentLabel(agentType) {
   if (agentType === AGENT_TYPES.REWRITE) return '文本润色';
   if (agentType === AGENT_TYPES.PROOFREAD) return '文本稽核';
   if (agentType === AGENT_TYPES.SUMMARIZE_LEADER) return '批示总结';
+  const custom = CustomAgentManager.getAgentById(agentType);
+  if (custom) return custom.name;
   return 'AI问答';
 }
 
@@ -409,9 +567,13 @@ const PromptManager = {
   }
 };
 
+/**
+ * 获取后端服务URL
+ * @returns {Promise<string>} 后端URL
+ */
 async function getBackendUrl() {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "GET_BACKEND_URL" }, (response) => {
+    chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_BACKEND_URL }, (response) => {
       resolve(response?.url || "http://localhost:8765");
     });
   });
@@ -428,6 +590,7 @@ async function init() {
     // 加载会话和提示词数据
     await StorageManager.loadSessions();
     await StorageManager.loadPromptTemplates();
+    await CustomAgentManager.load();
     renderSessionList();
     renderQuickPrompts();
 
@@ -722,6 +885,89 @@ function setupEventListeners() {
   document.querySelector('.ai-config-btn').addEventListener('click', openConfigPanel);
   document.querySelector('.ai-config-close').addEventListener('click', closeConfigPanel);
 
+  // 清空会话列表按钮事件
+  const clearSessionsBtn = document.getElementById('ai-clear-sessions-btn');
+  if (clearSessionsBtn) {
+    clearSessionsBtn.addEventListener('click', async () => {
+      if (isStreaming) {
+        // 如果正在流式输出，先中止
+        if (currentStreamSessionId) {
+          chrome.runtime.sendMessage({
+            action: 'ABORT_STREAM',
+            sessionId: currentStreamSessionId
+          });
+          isStreaming = false;
+          currentStreamSessionId = null;
+        }
+      }
+      
+      if (sessions.length === 0) {
+        showToast('会话列表已为空');
+        return;
+      }
+      
+      if (confirm(`确定要清空所有 ${sessions.length} 个会话吗？此操作不可恢复。`)) {
+        sessions = [];
+        currentSessionId = null;
+        conversationHistory = [];
+        StorageManager.saveSessions();
+        
+        // 创建新会话
+        SessionManager.createSession('新会话', AGENT_TYPES.CHAT);
+        messagesContainer.innerHTML = '';
+        renderSessionList();
+        updateHeaderTitle();
+        
+        showToast('已清空所有会话');
+      }
+    });
+  }
+
+  // 刷新页面上下文按钮事件
+  const refreshContextBtn = document.querySelector('.ai-refresh-context-mini');
+  const contextInfoSpan = document.getElementById('ai-context-info');
+  if (refreshContextBtn) {
+    const handleRefreshContext = async () => {
+      try {
+        refreshContextBtn.disabled = true;
+        refreshContextBtn.textContent = '⏳';
+        contextInfoSpan.textContent = '正在获取页面内容...';
+        
+        const context = await getCurrentPageContext(true);
+        if (context && context.content) {
+          // 更新当前会话的页面上下文
+          const currentSession = SessionManager.getCurrentSession();
+          if (currentSession) {
+            currentSession.pageContext = context;
+            StorageManager.saveSessions();
+          }
+          const url = context.metadata?.url || '';
+          const title = context.metadata?.title || '';
+          const shortUrl = url.length > 30 ? url.substring(0, 30) + '...' : url;
+          contextInfoSpan.textContent = `${title} (${shortUrl})`;
+          showToast('页面内容已获取');
+        } else {
+          contextInfoSpan.textContent = '无法获取页面内容，请点击重试';
+          showToast('获取页面内容失败', 3000, 'error');
+        }
+      } catch (error) {
+        console.error('[Sidepanel] 刷新页面上下文失败:', error);
+        contextInfoSpan.textContent = '获取失败，请点击重试';
+        showToast('刷新页面内容失败', 3000, 'error');
+      } finally {
+        refreshContextBtn.disabled = false;
+        refreshContextBtn.textContent = '🔄';
+      }
+    };
+    
+    refreshContextBtn.addEventListener('click', handleRefreshContext);
+    // 点击文字也可以刷新
+    if (contextInfoSpan) {
+      contextInfoSpan.style.cursor = 'pointer';
+      contextInfoSpan.addEventListener('click', handleRefreshContext);
+    }
+  }
+
   // 文件上传相关事件
   const uploadFileBtn = document.getElementById('ai-upload-file-btn');
   const fileInput = document.getElementById('ai-file-input');
@@ -741,6 +987,43 @@ function setupEventListeners() {
 
   if (fileRemoveBtn) {
     fileRemoveBtn.addEventListener('click', removeUploadedFile);
+  }
+
+  // 新增智能体按钮
+  const addAgentBtn = document.getElementById('ai-add-agent-btn');
+  if (addAgentBtn) {
+    addAgentBtn.addEventListener('click', openAddAgentModal);
+  }
+
+  // 管理智能体按钮
+  const manageAgentBtn = document.getElementById('ai-manage-agent-btn');
+  if (manageAgentBtn) {
+    manageAgentBtn.addEventListener('click', openManageAgentModal);
+  }
+
+  // 新增智能体弹窗事件
+  const addAgentModal = document.getElementById('ai-add-agent-modal');
+  if (addAgentModal) {
+    addAgentModal.querySelector('.ai-add-agent-modal-close').addEventListener('click', closeAddAgentModal);
+    addAgentModal.querySelector('.ai-add-agent-modal-cancel').addEventListener('click', closeAddAgentModal);
+    addAgentModal.addEventListener('click', (e) => {
+      if (e.target === addAgentModal) closeAddAgentModal();
+    });
+
+    const verifyBtn = document.getElementById('ai-add-agent-verify-btn');
+    if (verifyBtn) {
+      verifyBtn.addEventListener('click', handleAddAgentVerify);
+    }
+  }
+
+  // 管理智能体弹窗事件
+  const manageAgentModal = document.getElementById('ai-manage-agent-modal');
+  if (manageAgentModal) {
+    manageAgentModal.querySelector('.ai-manage-agent-modal-close').addEventListener('click', closeManageAgentModal);
+    manageAgentModal.querySelector('.ai-manage-agent-modal-close-btn').addEventListener('click', closeManageAgentModal);
+    manageAgentModal.addEventListener('click', (e) => {
+      if (e.target === manageAgentModal) closeManageAgentModal();
+    });
   }
 
   document.querySelector('.ai-config-save').addEventListener('click', async () => {
@@ -843,6 +1126,41 @@ async function sendMessage() {
   clearFileUploadState();
 }
 
+// 复制消息内容
+async function copyMessage(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+    button.innerHTML = '✓';
+    button.classList.add('copied');
+    showToast('已复制到剪贴板');
+    setTimeout(() => {
+      button.innerHTML = '📋';
+      button.classList.remove('copied');
+    }, 2000);
+  } catch (e) {
+    // 降级方案：使用textarea复制
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      button.innerHTML = '✓';
+      button.classList.add('copied');
+      showToast('已复制到剪贴板');
+      setTimeout(() => {
+        button.innerHTML = '📋';
+        button.classList.remove('copied');
+      }, 2000);
+    } catch (err) {
+      showToast('复制失败，请手动复制', 3000, 'error');
+    }
+    document.body.removeChild(textarea);
+  }
+}
+
 function addMessage(role, text) {
   const row = document.createElement('div');
   row.className = `ai-msg-row ai-${role}-row`;
@@ -874,6 +1192,16 @@ function addMessage(role, text) {
       bubble.innerHTML = parseMarkdown(text);
     }
     content.appendChild(bubble);
+
+    // 添加复制按钮（仅AI消息）
+    if (text !== '思考中...') {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'ai-msg-copy';
+      copyBtn.innerHTML = '📋';
+      copyBtn.title = '复制消息';
+      copyBtn.addEventListener('click', () => copyMessage(text, copyBtn));
+      content.appendChild(copyBtn);
+    }
   }
 
   if (role === 'user') {
@@ -1003,7 +1331,7 @@ async function getCurrentPageContext(forceRefresh = false) {
         console.log("[Sidepanel] Content script 注入成功");
 
         await new Promise(resolve => setTimeout(resolve, 200));
-        response = await chrome.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_CONTEXT" });
+        response = await chrome.tabs.sendMessage(activeTab.id, { type: MESSAGE_TYPES.GET_PAGE_CONTEXT });
       } catch (injectError) {
         console.error("[Sidepanel] 注入失败:", injectError.message);
         return null;
@@ -1067,7 +1395,7 @@ async function getApprovalPageContext() {
           files: ['content.js']
         });
         await new Promise(resolve => setTimeout(resolve, 200));
-        response = await chrome.tabs.sendMessage(activeTab.id, { type: "GET_APPROVAL_PAGE_CONTENT" });
+        response = await chrome.tabs.sendMessage(activeTab.id, { type: MESSAGE_TYPES.GET_APPROVAL_PAGE_CONTENT });
       } catch (injectError) {
         console.error("[Sidepanel] 注入失败:", injectError.message);
         return null;
@@ -1364,13 +1692,15 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
 
   try {
     const requestBodyJson = JSON.stringify(requestBody);
+    const customAgentKey = CustomAgentManager.getAgentKey(actualAgentId);
     chrome.runtime.sendMessage({
-      type: 'API_STREAM_REQUEST',
-      endpoint: '/sxzypt/py_talkHub/agent/agent',  // 新接口：统一路径
+      type: MESSAGE_TYPES.API_STREAM_REQUEST,
+      endpoint: API_ENDPOINTS.AGENT,
       body: requestBodyJson,
       sessionId: currentStreamSessionId,
       dialogId: currentDialogId,
-      agentId: actualAgentId,  // 同时传递 agentId 供背景页使用
+      agentId: actualAgentId,
+      agentKey: customAgentKey || undefined,
     });
     console.log('[Sidepanel] 智能体请求已发送，等待响应...');
 
@@ -1387,11 +1717,13 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
   }
 }
 
-// 中止流式请求
+/**
+ * 中止流式请求
+ */
 function abortStream() {
   if (isStreaming && currentStreamSessionId) {
     chrome.runtime.sendMessage({
-      type: 'ABORT_STREAM',
+      type: MESSAGE_TYPES.ABORT_STREAM,
       sessionId: currentStreamSessionId,
     }, (response) => {
       console.log("[Sidepanel] 中止请求响应:", response);
@@ -1453,27 +1785,27 @@ function updateSendButtonState() {
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === 'PAGE_CONTENT_CHANGED') {
-    console.log("[Sidepanel] 收到页面变化通知:", msg.url);
+  if (msg.type === MESSAGE_TYPES.PAGE_CONTENT_CHANGED) {
+    console.log("[Sidepanel] 收到页面变化通知");
     clearContextCache();
     refreshContextStatus();
     return;
   }
 
-  if (msg.type === 'STREAM_CHUNK') {
+  if (msg.type === MESSAGE_TYPES.STREAM_CHUNK) {
     if (msg.sessionId && msg.sessionId !== currentStreamSessionId) {
       return;
     }
     const { content, contentType } = msg;
 
-    if (contentType === 'think_start') {
+    if (contentType === STREAM_CONTENT_TYPES.THINK_START) {
       if (!currentBotBubble) {
         const msgElements = addMessage('bot', '');
         currentBotBubble = msgElements;
       }
       isInThinkBlock = true;
 
-    } else if (contentType === 'think') {
+    } else if (contentType === STREAM_CONTENT_TYPES.THINK) {
       if (!currentBotBubble) {
         const msgElements = addMessage('bot', '');
         currentBotBubble = msgElements;
@@ -1487,7 +1819,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       currentThinkBubble.innerHTML = parseMarkdown(accumulatedThinkText);
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-    } else if (contentType === 'think_end') {
+    } else if (contentType === STREAM_CONTENT_TYPES.THINK_END) {
       isInThinkBlock = false;
       if (currentThinkContainer) {
         collapseThinkBubble(currentThinkContainer);
@@ -1495,7 +1827,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       currentThinkBubble = null;
       currentThinkContainer = null;
 
-    } else if (contentType === 'content') {
+    } else if (contentType === STREAM_CONTENT_TYPES.CONTENT) {
       if (!currentBotBubble) {
         const msgElements = addMessage('bot', '');
         currentBotBubble = msgElements;
@@ -1511,7 +1843,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
-  } else if (msg.type === 'STREAM_DONE' || msg.type === 'STREAM_ABORTED') {
+  } else if (msg.type === MESSAGE_TYPES.STREAM_DONE || msg.type === MESSAGE_TYPES.STREAM_ABORTED) {
     if (msg.sessionId && msg.sessionId !== currentStreamSessionId) {
       return;
     }
@@ -1553,7 +1885,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     accumulatedThinkText = '';
     isInThinkBlock = false;
 
-  } else if (msg.type === 'STREAM_ERROR') {
+  } else if (msg.type === MESSAGE_TYPES.STREAM_ERROR) {
     if (msg.sessionId && msg.sessionId !== currentStreamSessionId) {
       return;
     }
@@ -2206,7 +2538,7 @@ async function uploadFileToServer(file, agentId = null) {
 
       // 发送消息给 background.js 进行上传
       chrome.runtime.sendMessage({
-        type: 'UPLOAD_FILE',
+        type: MESSAGE_TYPES.UPLOAD_FILE,
         requestId: requestId,
         agentId: agentId,
         dialogId: SessionManager.getCurrentDialogId(),
@@ -2355,17 +2687,49 @@ function clearFileUploadState() {
 
 // ========== 智能体选择弹窗功能 ==========
 
-/**
- * 显示智能体选择弹窗
- */
-function showAgentSelectionModal() {
+async function renderCustomAgentsInModal() {
+  const customAgentList = document.getElementById('ai-custom-agent-list');
+  const customAgentSection = document.getElementById('ai-custom-agent-section');
+  
+  if (!customAgentList || !customAgentSection) return;
+  
+  const agents = CustomAgentManager.getAll();
+  
+  if (agents.length === 0) {
+    customAgentSection.style.display = 'none';
+    customAgentList.innerHTML = '';
+    return;
+  }
+  
+  customAgentSection.style.display = 'block';
+  customAgentList.innerHTML = agents.map(agent => `
+    <div class="ai-agent-item ai-agent-item-custom" data-agent="${agent.id}">
+      <span class="ai-agent-icon">${agent.icon || '🤖'}</span>
+      <div class="ai-agent-info">
+        <div class="ai-agent-name">${agent.name}</div>
+        <div class="ai-agent-desc">${agent.desc || ''}</div>
+      </div>
+    </div>
+  `).join('');
+  
+  customAgentList.querySelectorAll('.ai-agent-item').forEach(item => {
+    item.onclick = () => {
+      const agentId = item.dataset.agent;
+      selectAgentAndCreateSession(agentId);
+      closeAgentSelectionModal();
+    };
+  });
+}
+
+async function showAgentSelectionModal() {
   const modal = document.getElementById('ai-agent-modal');
   if (!modal) return;
 
   modal.style.display = 'flex';
+  
+  await renderCustomAgentsInModal();
 
-  // 绑定智能体选择事件
-  const agentItems = modal.querySelectorAll('.ai-agent-item');
+  const agentItems = modal.querySelectorAll('#ai-agent-list > .ai-agent-section:first-child .ai-agent-item');
   agentItems.forEach(item => {
     item.onclick = () => {
       const agentId = item.dataset.agent;
@@ -2374,13 +2738,11 @@ function showAgentSelectionModal() {
     };
   });
 
-  // 绑定关闭按钮
   const closeBtn = modal.querySelector('.ai-agent-modal-close');
   if (closeBtn) {
     closeBtn.onclick = closeAgentSelectionModal;
   }
 
-  // 点击背景关闭
   modal.onclick = (e) => {
     if (e.target === modal) {
       closeAgentSelectionModal();
@@ -2388,9 +2750,6 @@ function showAgentSelectionModal() {
   };
 }
 
-/**
- * 关闭智能体选择弹窗
- */
 function closeAgentSelectionModal() {
   const modal = document.getElementById('ai-agent-modal');
   if (modal) {
@@ -2398,45 +2757,155 @@ function closeAgentSelectionModal() {
   }
 }
 
-/**
- * 选择智能体并创建会话
- */
-function selectAgentAndCreateSession(agentId) {
-  // 清空消息区域
-  messagesContainer.innerHTML = '';
-  clearContextCache();
-  conversationHistory = [];
-  clearFileUploadState();
+// ========== 新增智能体弹窗 ==========
 
-  // 根据智能体ID确定标题
-  let title = '新会话';
-  let agentType = AGENT_TYPES.CHAT;
-  let toastMsg = 'AI问答';
+function openAddAgentModal() {
+  const modal = document.getElementById('ai-add-agent-modal');
+  if (!modal) return;
 
-  switch (agentId) {
-    case 'ddf09cedfcbd4d188adc528461a91392':
-      title = 'AI问答会话';
-      agentType = AGENT_TYPES.CHAT;
-      toastMsg = 'AI问答';
-      break;
-    case 'bbad433949b64fab8de7f1a26d6ab56c':
-      title = '文本润色会话';
-      agentType = AGENT_TYPES.REWRITE;
-      toastMsg = '文本润色';
-      break;
-    case 'a03444b0e45d416fbc0a494b46a2c55b':
-      title = '文本稽核会话';
-      agentType = AGENT_TYPES.PROOFREAD;
-      toastMsg = '文本稽核';
-      break;
+  document.getElementById('ai-add-agent-name').value = '';
+  document.getElementById('ai-add-agent-id').value = '';
+  document.getElementById('ai-add-agent-key').value = '';
+  document.getElementById('ai-add-agent-icon').value = '🤖';
+  document.getElementById('ai-add-agent-desc').value = '';
+  document.getElementById('ai-add-agent-verify-status').textContent = '';
+  document.getElementById('ai-add-agent-verify-status').className = 'ai-add-agent-verify-status';
+
+  modal.style.display = 'flex';
+}
+
+function closeAddAgentModal() {
+  const modal = document.getElementById('ai-add-agent-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+async function handleAddAgentVerify() {
+  const name = document.getElementById('ai-add-agent-name').value.trim();
+  const agentId = document.getElementById('ai-add-agent-id').value.trim();
+  const agentKey = document.getElementById('ai-add-agent-key').value.trim();
+  const icon = document.getElementById('ai-add-agent-icon').value.trim() || '🤖';
+  const desc = document.getElementById('ai-add-agent-desc').value.trim();
+  const statusEl = document.getElementById('ai-add-agent-verify-status');
+  const verifyBtn = document.getElementById('ai-add-agent-verify-btn');
+
+  if (!name) {
+    statusEl.textContent = '请输入智能体名称';
+    statusEl.className = 'ai-add-agent-verify-status error';
+    return;
+  }
+  if (!agentId) {
+    statusEl.textContent = '请输入智能体ID';
+    statusEl.className = 'ai-add-agent-verify-status error';
+    return;
+  }
+  if (!agentKey) {
+    statusEl.textContent = '请输入智能体Key';
+    statusEl.className = 'ai-add-agent-verify-status error';
+    return;
   }
 
-  // 创建新会话
-  SessionManager.createSession(title, agentType);
-  renderSessionList();
-  updateHeaderTitle();
-  console.log(`[Sidepanel] 已创建新${toastMsg}会话`);
-  showToast(`已新建${toastMsg}对话`);
+  if (CustomAgentManager.getAgentById(agentId)) {
+    statusEl.textContent = '该智能体ID已存在';
+    statusEl.className = 'ai-add-agent-verify-status error';
+    return;
+  }
+
+  verifyBtn.disabled = true;
+  verifyBtn.textContent = '⏳ 验证中...';
+  statusEl.textContent = '正在验证智能体...';
+  statusEl.className = 'ai-add-agent-verify-status verifying';
+
+  const result = await verifyAgent(agentId, agentKey);
+
+  verifyBtn.disabled = false;
+  verifyBtn.textContent = '✅ 验证并保存';
+
+  if (result.success) {
+    statusEl.textContent = result.message;
+    statusEl.className = 'ai-add-agent-verify-status success';
+
+    await CustomAgentManager.add({
+      id: agentId,
+      name: name,
+      key: agentKey,
+      icon: icon,
+      desc: desc,
+      createdAt: Date.now(),
+    });
+
+    setTimeout(() => {
+      closeAddAgentModal();
+      showToast(`智能体「${name}」已添加`);
+    }, 800);
+  } else {
+    statusEl.textContent = result.message;
+    statusEl.className = 'ai-add-agent-verify-status error';
+  }
 }
+
+// ========== 管理智能体弹窗 ==========
+
+function openManageAgentModal() {
+  const modal = document.getElementById('ai-manage-agent-modal');
+  if (!modal) return;
+
+  renderManageAgentList();
+  modal.style.display = 'flex';
+}
+
+function closeManageAgentModal() {
+  const modal = document.getElementById('ai-manage-agent-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+function renderManageAgentList() {
+  const listEl = document.getElementById('ai-manage-agent-list');
+  const emptyEl = document.getElementById('ai-manage-agent-empty');
+  if (!listEl) return;
+
+  const agents = CustomAgentManager.getAll();
+
+  if (agents.length === 0) {
+    listEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'block';
+    return;
+  }
+
+  listEl.style.display = 'flex';
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  listEl.innerHTML = agents.map(agent => `
+    <div class="ai-manage-agent-item" data-agent-id="${agent.id}">
+      <div class="ai-manage-agent-info">
+        <span class="ai-manage-agent-icon">${agent.icon || '🤖'}</span>
+        <div class="ai-manage-agent-detail">
+          <div class="ai-manage-agent-name">${agent.name}</div>
+          <div class="ai-manage-agent-id">ID: ${agent.id}</div>
+          ${agent.desc ? `<div class="ai-manage-agent-desc">${agent.desc}</div>` : ''}
+        </div>
+      </div>
+      <button class="ai-manage-agent-delete" data-agent-id="${agent.id}">🗑️ 删除</button>
+    </div>
+  `).join('');
+
+  listEl.querySelectorAll('.ai-manage-agent-delete').forEach(btn => {
+    btn.onclick = async () => {
+      const agentId = btn.dataset.agentId;
+      const agent = CustomAgentManager.getAgentById(agentId);
+      if (!agent) return;
+      if (confirm(`确定要删除智能体「${agent.name}」吗？\n删除后使用该智能体的会话将无法继续对话。`)) {
+        await CustomAgentManager.remove(agentId);
+        renderManageAgentList();
+        showToast(`智能体「${agent.name}」已删除`);
+      }
+    };
+  });
+}
+
+// ========== 智能体选择与会话创建 ==========
 
 init();

@@ -17,9 +17,9 @@
         <!-- 会话列表项将动态生成 -->
       </div>
       <div class="ai-sidebar-left-footer">
-        <button class="ai-prompt-templates-btn" title="预设提示词">
-          <span>📋</span>
-          <span>提示词</span>
+        <button class="ai-clear-sessions-btn" id="ai-clear-sessions-btn" title="清空所有会话">
+          <span>🗑️</span>
+          <span>清空</span>
         </button>
       </div>
     </div>
@@ -76,6 +76,11 @@
         <!-- 上下文状态栏 -->
         <div class="ai-context-bar">
           <div class="ai-context-left">
+            <label class="ai-context-toggle" title="开启/关闭页面上下文">
+              <input type="checkbox" id="ai-use-context" checked>
+              <span class="ai-toggle-slider"></span>
+              <span class="ai-toggle-label">页面信息</span>
+            </label>
             <button class="ai-refresh-context-mini" title="刷新网页上下文">🔄</button>
             <span id="ai-context-info" class="context-info">点击刷新获取页面内容</span>
           </div>
@@ -145,6 +150,20 @@
     </div>
     <div class="ai-config-content">
       <div class="ai-config-section">
+        <h3>智能体管理</h3>
+        <small style="color: #888; font-size: 11px; display: block; margin-bottom: 10px;">管理您的智能体，添加自定义智能体</small>
+      </div>
+
+      <div class="ai-config-item">
+        <label>智能体操作</label>
+        <div class="ai-agent-actions">
+          <button class="ai-agent-btn" id="ai-add-agent-btn">➕ 新增智能体</button>
+          <button class="ai-agent-btn" id="ai-manage-agent-btn">🤖 管理智能体</button>
+        </div>
+        <small style="color: #888; font-size: 11px; display: block; margin-top: 6px;">添加自定义智能体，每个智能体需配置独立的ID和Key</small>
+      </div>
+
+      <div class="ai-config-section">
         <h3>个人身份配置</h3>
         <small style="color: #888; font-size: 11px; display: block; margin-bottom: 10px;">用于个性化提示和识别与您相关的内容</small>
       </div>
@@ -211,36 +230,120 @@
         <span class="ai-agent-modal-close">×</span>
       </div>
       <div class="ai-agent-modal-body">
-        <div class="ai-agent-list">
-          <div class="ai-agent-item" data-agent="ddf09cedfcbd4d188adc528461a91392">
-            <span class="ai-agent-icon">💬</span>
-            <div class="ai-agent-info">
-              <div class="ai-agent-name">AI 问答</div>
-              <div class="ai-agent-desc">通用AI对话，支持文件问答</div>
+        <div class="ai-agent-list" id="ai-agent-list">
+          <!-- 内置智能体 -->
+          <div class="ai-agent-section">
+            <div class="ai-agent-section-title">🎯 内置智能体</div>
+            <div class="ai-agent-item" data-agent="ddf09cedfcbd4d188adc528461a91392">
+              <span class="ai-agent-icon">💬</span>
+              <div class="ai-agent-info">
+                <div class="ai-agent-name">AI 问答</div>
+                <div class="ai-agent-desc">通用AI对话，支持文件问答</div>
+              </div>
+            </div>
+            <div class="ai-agent-item" data-agent="bbad433949b64fab8de7f1a26d6ab56c">
+              <span class="ai-agent-icon">✨</span>
+              <div class="ai-agent-info">
+                <div class="ai-agent-name">文本润色</div>
+                <div class="ai-agent-desc">优化文字表达，提升流畅度和专业性</div>
+              </div>
+            </div>
+            <div class="ai-agent-item" data-agent="a03444b0e45d416fbc0a494b46a2c55b">
+              <span class="ai-agent-icon">🔍</span>
+              <div class="ai-agent-info">
+                <div class="ai-agent-name">文本稽核</div>
+                <div class="ai-agent-desc">检查错别字、语句通顺和格式问题</div>
+              </div>
             </div>
           </div>
-          <div class="ai-agent-item" data-agent="bbad433949b64fab8de7f1a26d6ab56c">
-            <span class="ai-agent-icon">✨</span>
-            <div class="ai-agent-info">
-              <div class="ai-agent-name">文本润色</div>
-              <div class="ai-agent-desc">优化文字表达，提升流畅度和专业性</div>
+          <!-- 自定义智能体列表将动态生成 -->
+          <div class="ai-agent-section" id="ai-custom-agent-section" style="display: none;">
+            <div class="ai-agent-section-title">🤖 我的智能体</div>
+            <div class="ai-custom-agent-list" id="ai-custom-agent-list">
+              <!-- 动态生成 -->
             </div>
           </div>
-          <div class="ai-agent-item" data-agent="a03444b0e45d416fbc0a494b46a2c55b">
-            <span class="ai-agent-icon">🔍</span>
-            <div class="ai-agent-info">
-              <div class="ai-agent-name">文本稽核</div>
-              <div class="ai-agent-desc">检查错别字、语句通顺和格式问题</div>
-            </div>
-          </div>
-
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增智能体弹窗 -->
+  <div class="ai-add-agent-modal" id="ai-add-agent-modal" style="display: none;">
+    <div class="ai-add-agent-modal-content">
+      <div class="ai-add-agent-modal-header">
+        <span>新增智能体</span>
+        <span class="ai-add-agent-modal-close">×</span>
+      </div>
+      <div class="ai-add-agent-modal-body">
+        <div class="ai-add-agent-form-item">
+          <label>智能体名称 <span class="required">*</span></label>
+          <input type="text" id="ai-add-agent-name" placeholder="例如：代码助手、文档生成器">
+        </div>
+        <div class="ai-add-agent-form-item">
+          <label>智能体ID <span class="required">*</span></label>
+          <input type="text" id="ai-add-agent-id" placeholder="32位智能体唯一标识">
+        </div>
+        <div class="ai-add-agent-form-item">
+          <label>智能体Key <span class="required">*</span></label>
+          <input type="password" id="ai-add-agent-key" placeholder="智能体调用密钥">
+        </div>
+        <div class="ai-add-agent-form-item">
+          <label>图标</label>
+          <input type="text" id="ai-add-agent-icon" placeholder="emoji图标，如：🤖" maxlength="2" value="🤖">
+        </div>
+        <div class="ai-add-agent-form-item">
+          <label>描述</label>
+          <input type="text" id="ai-add-agent-desc" placeholder="智能体功能描述">
+        </div>
+        <div class="ai-add-agent-verify-status" id="ai-add-agent-verify-status"></div>
+      </div>
+      <div class="ai-add-agent-modal-footer">
+        <button class="ai-add-agent-modal-cancel">取消</button>
+        <button class="ai-add-agent-modal-verify" id="ai-add-agent-verify-btn">✅ 验证并保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 管理智能体弹窗 -->
+  <div class="ai-manage-agent-modal" id="ai-manage-agent-modal" style="display: none;">
+    <div class="ai-manage-agent-modal-content">
+      <div class="ai-manage-agent-modal-header">
+        <span>管理智能体</span>
+        <span class="ai-manage-agent-modal-close">×</span>
+      </div>
+      <div class="ai-manage-agent-modal-body">
+        <div class="ai-manage-agent-list" id="ai-manage-agent-list">
+          <!-- 动态生成智能体列表 -->
+        </div>
+        <div class="ai-manage-agent-empty" id="ai-manage-agent-empty" style="display: none;">
+          <div class="empty-icon">🤖</div>
+          <div class="empty-text">暂无自定义智能体</div>
+          <div class="empty-hint">点击"新增智能体"添加您的第一个智能体</div>
+        </div>
+      </div>
+      <div class="ai-manage-agent-modal-footer">
+        <button class="ai-manage-agent-modal-close-btn">关闭</button>
       </div>
     </div>
   </div>
 
   <script src="lib/marked.min.js"></script>
   <script src="lib/highlight.core.min.js"></script>
-  <script src="sidepanel.js"></script>
+  <!-- 全局变量和常量（必须最先加载） -->
+  <script src="modules/globals.js"></script>
+  <!-- 模块化JS文件（按依赖顺序加载） -->
+  <script src="modules/config.js"></script>
+  <script src="modules/utils.js"></script>
+  <script src="modules/agent-manager.js"></script>
+  <script src="modules/storage.js"></script>
+  <script src="modules/session.js"></script>
+  <script src="modules/prompt.js"></script>
+  <script src="modules/ui.js"></script>
+  <script src="modules/stream.js"></script>
+  <script src="modules/file-upload.js"></script>
+  <script src="modules/page-context.js"></script>
+  <script src="modules/modals.js"></script>
+  <script src="modules/main.js"></script>
 </body>
 </html>
