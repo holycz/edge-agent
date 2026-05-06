@@ -2723,3 +2723,164 @@ html, body {
     transform: scale(1);
   }
 }
+
+/* ==================== 会话日期分组标题 ==================== */
+.ai-session-group-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  padding: 12px 12px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ==================== 会话重命名 ==================== */
+.ai-session-rename-input {
+  width: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+/* ==================== 后端连接状态指示 ==================== */
+.ai-header-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  cursor: default;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.ai-header-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 4px rgba(16, 185, 129, 0.5);
+  transition: background var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.ai-header-status-dot.offline {
+  background: var(--color-error);
+  box-shadow: 0 0 4px rgba(255, 77, 79, 0.5);
+}
+
+.ai-header-status-dot.checking {
+  background: var(--color-warning);
+  box-shadow: 0 0 4px rgba(250, 173, 20, 0.5);
+  animation: statusPulse 1s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ==================== 快捷键帮助面板 ==================== */
+.ai-shortcut-help-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 5000;
+  justify-content: center;
+  align-items: center;
+}
+
+.ai-shortcut-help-overlay.visible {
+  display: flex;
+}
+
+.ai-shortcut-help-panel {
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 320px;
+  max-height: 80vh;
+  overflow: hidden;
+  animation: modalIn 0.2s ease;
+}
+
+.ai-shortcut-help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ai-shortcut-help-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ai-shortcut-help-close {
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--text-tertiary);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.ai-shortcut-help-close:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.ai-shortcut-help-list {
+  padding: 10px 16px 14px;
+  overflow-y: auto;
+  max-height: calc(80vh - 52px);
+}
+
+.ai-shortcut-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.ai-shortcut-item + .ai-shortcut-item {
+  border-top: 1px solid var(--border-color-light);
+}
+
+.ai-shortcut-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ai-shortcut-keys {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-shortcut-key {
+  display: inline-block;
+  font-size: 11px;
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 2px 6px;
+  line-height: 1.4;
+  box-shadow: 0 1px 0 var(--border-color);
+}

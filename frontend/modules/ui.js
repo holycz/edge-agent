@@ -312,7 +312,7 @@ function createContentBubble(contentContainer) {
 }
 
 /**
- * 渲染会话列表
+ * 渲染会话列表（带日期分组）
  */
 function renderSessionList() {
   const list = document.getElementById('ai-session-list');
@@ -322,42 +322,157 @@ function renderSessionList() {
 
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  // 按日期分组
+  const groups = { today: [], yesterday: [], earlier: [] };
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toDateString();
+
   sortedSessions.forEach(session => {
-    const item = document.createElement('div');
-    item.className = 'ai-session-item' + (session.id === currentSessionId ? ' active' : '');
-    item.dataset.id = session.id;
-
-    let agentIcon = '💬';
-    if (session.agentType === AGENT_IDS.SUMMARIZE_PAGE) agentIcon = '📄';
-    else if (session.agentType === AGENT_IDS.SUMMARIZE_LEADER) agentIcon = '👔';
-    else if (session.agentType === AGENT_IDS.REWRITE) agentIcon = '✨';
-    else if (session.agentType === AGENT_IDS.PROOFREAD) agentIcon = '🔍';
-
-    const title = document.createElement('div');
-    title.className = 'ai-session-item-title';
-    title.textContent = `${agentIcon} ${session.title || '新会话'}`;
-    title.title = `${session.title || '新会话'} [${agentIcon} ${session.agentType === AGENT_IDS.CHAT ? 'AI问答' : '其他'}]`;
-
-    const actions = document.createElement('div');
-    actions.className = 'ai-session-item-actions';
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'ai-session-item-action';
-    deleteBtn.innerHTML = '🗑️';
-    deleteBtn.title = '删除会话';
-    deleteBtn.onclick = (e) => {
-      e.stopPropagation();
-      deleteSession(session.id);
-    };
-
-    actions.appendChild(deleteBtn);
-    item.appendChild(title);
-    item.appendChild(actions);
-
-    item.onclick = () => switchToSession(session.id);
-
-    list.appendChild(item);
+    const d = new Date(session.updatedAt);
+    if (d.toDateString() === todayStr) groups.today.push(session);
+    else if (d.toDateString() === yesterdayStr) groups.yesterday.push(session);
+    else groups.earlier.push(session);
   });
+
+  const groupDefs = [
+    { key: 'today', label: '今天' },
+    { key: 'yesterday', label: '昨天' },
+    { key: 'earlier', label: '更早' },
+  ];
+
+  groupDefs.forEach(({ key, label }) => {
+    if (groups[key].length === 0) return;
+    const header = document.createElement('div');
+    header.className = 'ai-session-group-header';
+    header.textContent = label;
+    list.appendChild(header);
+
+    groups[key].forEach(session => {
+      list.appendChild(createSessionItem(session));
+    });
+  });
+}
+
+/**
+ * 创建单个会话列表项
+ * @param {Object} session - 会话对象
+ * @returns {HTMLElement} 会话项元素
+ */
+function createSessionItem(session) {
+  const item = document.createElement('div');
+  item.className = 'ai-session-item' + (session.id === currentSessionId ? ' active' : '');
+  item.dataset.id = session.id;
+
+  let agentIcon = '💬';
+  if (session.agentType === AGENT_IDS.SUMMARIZE_PAGE) agentIcon = '📄';
+  else if (session.agentType === AGENT_IDS.SUMMARIZE_LEADER) agentIcon = '👔';
+  else if (session.agentType === AGENT_IDS.REWRITE) agentIcon = '✨';
+  else if (session.agentType === AGENT_IDS.PROOFREAD) agentIcon = '🔍';
+
+  const title = document.createElement('div');
+  title.className = 'ai-session-item-title';
+  title.textContent = `${agentIcon} ${session.title || '新会话'}`;
+  title.title = `${session.title || '新会话'} [${agentIcon} ${session.agentType === AGENT_IDS.CHAT ? 'AI问答' : '其他'}]`;
+
+  // 双击重命名
+  title.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    startRenameSession(item, title, session);
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'ai-session-item-actions';
+
+  // 重命名按钮
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'ai-session-item-action';
+  renameBtn.innerHTML = '✏️';
+  renameBtn.title = '重命名';
+  renameBtn.onclick = (e) => {
+    e.stopPropagation();
+    startRenameSession(item, title, session);
+  };
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'ai-session-item-action';
+  deleteBtn.innerHTML = '🗑️';
+  deleteBtn.title = '删除会话';
+  deleteBtn.onclick = (e) => {
+    e.stopPropagation();
+    deleteSession(session.id);
+  };
+
+  actions.appendChild(renameBtn);
+  actions.appendChild(deleteBtn);
+  item.appendChild(title);
+  item.appendChild(actions);
+
+  item.onclick = () => switchToSession(session.id);
+
+  return item;
+}
+
+/**
+ * 启动会话重命名
+ * @param {HTMLElement} itemEl - 会话项容器
+ * @param {HTMLElement} titleEl - 标题元素
+ * @param {Object} session - 会话对象
+ */
+function startRenameSession(itemEl, titleEl, session) {
+  // 如果已在编辑中，跳过
+  if (itemEl.querySelector('.ai-session-rename-input')) return;
+
+  const currentText = session.title || '新会话';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'ai-session-rename-input';
+  input.value = currentText;
+
+  // 替换标题
+  titleEl.style.display = 'none';
+  titleEl.parentNode.insertBefore(input, titleEl);
+  input.focus();
+  input.select();
+
+  const save = () => {
+    const newTitle = input.value.trim();
+    if (newTitle && newTitle !== currentText) {
+      SessionManager.updateSessionTitle(session.id, newTitle);
+      titleEl.textContent = `${getAgentIcon(session.agentType)} ${newTitle}`;
+      titleEl.title = `${newTitle} [${getAgentIcon(session.agentType)} ${session.agentType === AGENT_IDS.CHAT ? 'AI问答' : '其他'}]`;
+      showToast('会话已重命名');
+    }
+    input.remove();
+    titleEl.style.display = '';
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      input.removeEventListener('blur', save);
+      input.remove();
+      titleEl.style.display = '';
+    }
+  });
+}
+
+/**
+ * 获取智能体图标
+ * @param {string} agentType - 智能体类型ID
+ * @returns {string} 图标
+ */
+function getAgentIcon(agentType) {
+  if (agentType === AGENT_IDS.SUMMARIZE_PAGE) return '📄';
+  if (agentType === AGENT_IDS.SUMMARIZE_LEADER) return '👔';
+  if (agentType === AGENT_IDS.REWRITE) return '✨';
+  if (agentType === AGENT_IDS.PROOFREAD) return '🔍';
+  return '💬';
 }
 
 /**

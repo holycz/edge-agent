@@ -68,6 +68,17 @@ async function saveConfig(newConfig) {
  * @returns {Promise<{available: boolean, message: string}>}
  */
 async function checkBackendStatus() {
-  // 当前后端状态检查已禁用，直接返回正常
-  return { available: true, message: '后端服务正常' };
+  try {
+    const backendUrl = await getBackendUrl();
+    const response = await fetch(backendUrl.replace(/\/$/, '') + '/docs', {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok || response.status === 405) {
+      return { available: true, message: '后端服务正常' };
+    }
+    return { available: false, message: '后端服务异常' };
+  } catch (e) {
+    return { available: false, message: '后端连接失败' };
+  }
 }

@@ -109,6 +109,13 @@ async function init() {
     console.log("[Main] 初始化完成，检查待处理问题...");
     await checkPendingQuestion();
 
+    // 初始化后端状态检查
+    updateBackendStatus();
+    setInterval(updateBackendStatus, 60000);
+
+    // 初始化快捷键帮助
+    initShortcutHelp();
+
     chrome.storage.onChanged.addListener(handleStorageChange);
   } catch (e) {
     console.error("[Main] 初始化失败:", e);
@@ -832,6 +839,87 @@ async function clearAllData() {
     renderQuickPrompts();
     showToast('已清空所有数据');
   }
+}
+
+// ========== 后端状态检查 ==========
+
+let lastBackendAvailable = null;
+
+/**
+ * 更新后端连接状态显示
+ */
+async function updateBackendStatus() {
+  const dot = document.getElementById('ai-status-dot');
+  const text = document.getElementById('ai-status-text');
+  if (!dot || !text) return;
+
+  dot.className = 'ai-header-status-dot checking';
+  text.textContent = '检查中...';
+
+  const status = await checkBackendStatus();
+  lastBackendAvailable = status.available;
+
+  if (status.available) {
+    dot.className = 'ai-header-status-dot';
+    text.textContent = '已连接';
+  } else {
+    dot.className = 'ai-header-status-dot offline';
+    text.textContent = '未连接';
+  }
+}
+
+// ========== 快捷键帮助 ==========
+
+/**
+ * 初始化快捷键帮助面板
+ */
+function initShortcutHelp() {
+  const overlay = document.getElementById('ai-shortcut-help-overlay');
+  const closeBtn = document.getElementById('ai-shortcut-help-close');
+  if (!overlay) return;
+
+  // 关闭按钮
+  closeBtn.addEventListener('click', () => {
+    overlay.classList.remove('visible');
+  });
+
+  // 点击遮罩关闭
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      overlay.classList.remove('visible');
+    }
+  });
+
+  // 全局快捷键
+  document.addEventListener('keydown', (e) => {
+    const isInputFocused = document.activeElement &&
+      (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+
+    // Ctrl+/ 显示快捷键帮助
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+      e.preventDefault();
+      overlay.classList.toggle('visible');
+      return;
+    }
+
+    // 以下快捷键仅在非输入框时生效
+    if (isInputFocused) return;
+
+    // Ctrl+N 新建对话
+    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+      e.preventDefault();
+      clearMessages();
+      return;
+    }
+
+    // Ctrl+B 切换侧边栏
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+      e.preventDefault();
+      const sidebar = document.getElementById('ai-sidebar-left');
+      if (sidebar) sidebar.classList.toggle('collapsed');
+      return;
+    }
+  });
 }
 
 // ========== Chrome消息监听 ==========

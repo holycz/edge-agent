@@ -53,6 +53,10 @@
           <button class="ai-toggle-sidebar" id="ai-toggle-sidebar" title="展开/收起会话列表">☰</button>
           <span class="ai-title">移点通</span>
           <span class="ai-session-title" id="ai-session-title"></span>
+          <div class="ai-header-status">
+            <span class="ai-header-status-dot" id="ai-status-dot"></span>
+            <span id="ai-status-text">检查中...</span>
+          </div>
         </div>
         <div class="ai-header-actions">
           <span class="ai-header-btn ai-new-chat" title="新建对话">➕</span>
@@ -345,6 +349,42 @@
       </div>
       <div class="ai-manage-agent-modal-footer">
         <button class="ai-manage-agent-modal-close-btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 快捷键帮助面板 -->
+  <div class="ai-shortcut-help-overlay" id="ai-shortcut-help-overlay">
+    <div class="ai-shortcut-help-panel">
+      <div class="ai-shortcut-help-header">
+        <span class="ai-shortcut-help-title">⌨️ 快捷键</span>
+        <span class="ai-shortcut-help-close" id="ai-shortcut-help-close">✕</span>
+      </div>
+      <div class="ai-shortcut-help-list">
+        <div class="ai-shortcut-item">
+          <span class="ai-shortcut-label">搜索对话历史</span>
+          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Ctrl</span><span class="ai-shortcut-key">K</span></div>
+        </div>
+        <div class="ai-shortcut-item">
+          <span class="ai-shortcut-label">新建对话</span>
+          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Ctrl</span><span class="ai-shortcut-key">N</span></div>
+        </div>
+        <div class="ai-shortcut-item">
+          <span class="ai-shortcut-label">切换会话列表</span>
+          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Ctrl</span><span class="ai-shortcut-key">B</span></div>
+        </div>
+        <div class="ai-shortcut-item">
+          <span class="ai-shortcut-label">发送消息</span>
+          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Enter</span></div>
+        </div>
+        <div class="ai-shortcut-item">
+          <span class="ai-shortcut-label">换行</span>
+          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Shift</span><span class="ai-shortcut-key">Enter</span></div>
+        </div>
+        <div class="ai-shortcut-item">
+          <span class="ai-shortcut-label">显示快捷键帮助</span>
+          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Ctrl</span><span class="ai-shortcut-key">/</span></div>
+        </div>
       </div>
     </div>
   </div>
