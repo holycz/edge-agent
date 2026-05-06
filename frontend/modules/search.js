@@ -339,11 +339,6 @@ function jumpToSearchResult(resultIndex, sessionId) {
   const result = searchResults[resultIndex];
   if (!result) return;
   
-  // 清空搜索
-  clearSearch();
-  searchInput.value = '';
-  searchClearBtn.style.display = 'none';
-  
   // 切换到目标会话（switchSession 内部会设置 conversationHistory）
   const session = SessionManager.switchSession(sessionId);
   if (!session) {
