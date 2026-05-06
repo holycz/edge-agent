@@ -20,7 +20,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["lib/*", "constants.js", "modules/*", "sidepanel.js"],
+      "resources": ["lib/*", "constants.js", "modules/*"],
       "matches": ["<all_urls>"]
     }
   ],

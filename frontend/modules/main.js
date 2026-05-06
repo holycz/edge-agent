@@ -6,6 +6,46 @@
 
 // 常量和全局变量已在 globals.js 中定义
 
+// ========== 工具函数 ==========
+
+/**
+ * 自动获取页面上下文（异步，不阻塞UI）
+ * 严格遵守useContext开关状态
+ */
+async function autoFetchPageContext() {
+  try {
+    const contextInfoSpan = document.getElementById('ai-context-info');
+    if (contextInfoSpan) {
+      contextInfoSpan.textContent = '正在获取页面内容...';
+    }
+    
+    const context = await getCurrentPageContext();
+    if (context && context.content) {
+      const currentSession = SessionManager.getCurrentSession();
+      if (currentSession) {
+        currentSession.pageContext = context;
+        StorageManager.saveSessions();
+      }
+      const url = context.metadata?.url || '';
+      const title = context.metadata?.title || '';
+      const shortUrl = url.length > 30 ? url.substring(0, 30) + '...' : url;
+      if (contextInfoSpan) {
+        contextInfoSpan.textContent = `${title} (${shortUrl})`;
+      }
+    } else {
+      if (contextInfoSpan) {
+        contextInfoSpan.textContent = '点击刷新获取页面内容';
+      }
+    }
+  } catch (error) {
+    console.error('[Main] 自动获取页面上下文失败:', error);
+    const contextInfoSpan = document.getElementById('ai-context-info');
+    if (contextInfoSpan) {
+      contextInfoSpan.textContent = '点击刷新获取页面内容';
+    }
+  }
+}
+
 // ========== 初始化 ==========
 
 /**
@@ -46,11 +86,19 @@ async function init() {
         SessionManager.createSession('新会话', AGENT_IDS.CHAT);
         renderSessionList();
         updateHeaderTitle();
+        // 新建会话时自动获取页面上下文（遵守useContext开关）
+        if (config.useContext) {
+          autoFetchPageContext();
+        }
       }
     } else {
       SessionManager.createSession('新会话');
       renderSessionList();
       updateHeaderTitle();
+      // 新建会话时自动获取页面上下文（遵守useContext开关）
+      if (config.useContext) {
+        autoFetchPageContext();
+      }
     }
 
     console.log("[Main] 初始化完成，检查待处理问题...");

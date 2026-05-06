@@ -7,7 +7,7 @@
 // ========== 智能体ID常量 ==========
 const AGENT_IDS = {
   CHAT: 'ddf09cedfcbd4d188adc528461a91392',
-  SUMMARIZE_PAGE: 'ac32fe9431b1444f8ac3df42901024e',
+  SUMMARIZE_PAGE: 'ac32fe9431b1444f8ac3cdf42901024e',
   REWRITE: 'bbad433949b64fab8de7f1a26d6ab56c',
   PROOFREAD: 'a03444b0e45d416fbc0a494b46a2c55b',
   SUMMARIZE_LEADER: '205a099ade6a4c4fb454e11f96ee6a18',

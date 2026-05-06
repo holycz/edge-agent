@@ -32,7 +32,7 @@ const MESSAGE_TYPES = {
 const AGENT_IDS = {
   // 内置智能体
   CHAT: 'ddf09cedfcbd4d188adc528461a91392',           // AI问答（默认）
-  SUMMARIZE_PAGE: 'ac32fe9431b1444f8ac3df42901024e',  // 网页总结
+  SUMMARIZE_PAGE: 'ac32fe9431b1444f8ac3cdf42901024e',  // 网页总结
   REWRITE: 'bbad433949b64fab8de7f1a26d6ab56c',       // 文本润色
   PROOFREAD: 'a03444b0e45d416fbc0a494b46a2c55b',     // 文本稽核
   SUMMARIZE_LEADER: '205a099ade6a4c4fb454e11f96ee6a18', // 公文批示总结

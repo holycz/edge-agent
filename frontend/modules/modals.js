@@ -98,6 +98,11 @@ function selectAgentAndCreateSession(agentId) {
   updateHeaderTitle();
   inputTextarea.focus();
   
+  // 新建会话时自动获取页面上下文（遵守useContext开关）
+  if (config.useContext) {
+    autoFetchPageContext();
+  }
+  
   showToast(`已创建${agentLabel}会话`);
 }
 

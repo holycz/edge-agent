@@ -9,12 +9,26 @@ edge-agent/
 ├── frontend/                    # 浏览器插件前端（只存UI和通信）
 │   ├── background.js            # 服务工作者：转发请求到后端
 │   ├── content.js               # 页面内容提取
-│   ├── sidepanel.js             # 侧边栏UI逻辑
-│   ├── sidepanel.html
-│   ├── sidepanel.css
-│   ├── style.css
+│   ├── sidepanel.html           # 侧边栏页面
+│   ├── sidepanel.css            # 侧边栏样式
+│   ├── style.css                # 全局样式
+│   ├── constants.js             # 常量定义
 │   ├── manifest.json
-│   └── lib/                     # 依赖库（marked, highlight.js）
+│   ├── lib/                     # 依赖库（marked, highlight.js）
+│   └── modules/                 # 模块化JS文件
+│       ├── globals.js           # 全局变量
+│       ├── config.js            # 配置管理
+│       ├── utils.js             # 工具函数
+│       ├── agent-manager.js     # 智能体管理
+│       ├── storage.js           # 存储管理
+│       ├── session.js           # 会话管理
+│       ├── prompt.js            # 提示词管理
+│       ├── ui.js                # UI工具
+│       ├── stream.js            # 流式请求
+│       ├── file-upload.js       # 文件上传
+│       ├── page-context.js      # 页面上下文
+│       ├── modals.js            # 弹窗管理
+│       └── main.js              # 主入口
 ├── backend/                     # Python 后端（敏感功能）
 │   ├── run.py                   # 启动入口
 │   ├── requirements.txt
@@ -90,9 +104,6 @@ python run.py
 API_KEY=your_api_key_here
 API_URL=https://integrate.api.nvidia.com/v1
 MODEL=qwen/qwen3-next-80b-a3b-instruct
-MY_NAME=                     # 用于总结领导批示时识别
-OTHER_INFO=                  # 额外个人身份信息
-PORT=8765
 FILE_UPLOAD_URL=http://124.225.137.100:8101/aistar_server/sdk/agent/uploadFiles  # 文件上传服务地址
 ```
 
@@ -172,7 +183,7 @@ data: {"choices": [{"delta":{"content":"end##end"}}]}              # 流结束
 
 ### 5.3 前端消息通信
 
-1. `GET_BACKEND_URL` - 获取后端服务地址（默认 http://10.142.135.57:8000）
+1. `GET_BACKEND_URL` - 获取后端服务地址
 2. `API_STREAM_REQUEST` - 发送流式请求到后端，需包含 `endpoint`、`body`、`sessionId` 字段
 3. `ABORT_STREAM` - 中止流式请求，需包含 `sessionId` 字段
 4. `OPEN_SIDEPANEL` - 从 content script 打开侧边栏
