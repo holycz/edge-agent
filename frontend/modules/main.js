@@ -66,6 +66,11 @@ async function init() {
     setupSessionPanelListeners();
     setupPromptPanelListeners();
     setupModalEventListeners();
+    
+    // 初始化搜索模块
+    if (typeof SearchManager !== 'undefined' && SearchManager.init) {
+      SearchManager.init();
+    }
 
     // 加载数据
     await StorageManager.loadSessions();

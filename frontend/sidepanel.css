@@ -2456,3 +2456,235 @@ html, body {
   font-size: 12px;
   color: var(--text-tertiary);
 }
+
+/* ==================== 搜索功能 ==================== */
+.ai-search-container {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color-light);
+  background: var(--bg-primary);
+}
+
+.ai-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  transition: all var(--transition-normal);
+}
+
+.ai-search-box:focus-within {
+  border-color: var(--color-primary);
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.ai-search-icon {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.ai-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.ai-search-input::placeholder {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.ai-search-clear {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.ai-search-clear:hover {
+  background: var(--text-tertiary);
+  color: white;
+}
+
+/* 搜索结果面板 */
+.ai-search-results {
+  max-height: 50%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border-color-light);
+  background: var(--bg-primary);
+}
+
+.ai-search-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color-light);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.ai-search-results-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.ai-search-close {
+  padding: 4px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all var(--transition-fast);
+}
+
+.ai-search-close:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.ai-search-results-list {
+  padding: 8px;
+}
+
+.ai-search-result-item {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  margin-bottom: 4px;
+  border: 1px solid transparent;
+}
+
+.ai-search-result-item:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+}
+
+.ai-search-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.ai-search-result-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+
+.ai-search-result-agent {
+  font-size: 11px;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.ai-search-result-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ai-search-result-role {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.ai-search-result-snippet {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.ai-search-highlight {
+  background: #fff176;
+  color: var(--text-primary);
+  padding: 1px 2px;
+  border-radius: 2px;
+  font-weight: 500;
+}
+
+.ai-search-result-meta {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-search-result-date {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* 搜索结果为空 */
+.ai-search-empty {
+  text-align: center;
+  padding: 32px 16px;
+}
+
+.ai-search-empty-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+
+.ai-search-empty-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.ai-search-empty-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 消息高亮动画 */
+.ai-msg-highlight {
+  animation: highlightFade 3s ease-out;
+  background-color: rgba(255, 235, 59, 0.3);
+  border-radius: var(--radius-sm);
+}
+
+@keyframes highlightFade {
+  0% {
+    background-color: rgba(255, 235, 59, 0.8);
+    transform: scale(1.02);
+  }
+  100% {
+    background-color: transparent;
+    transform: scale(1);
+  }
+}

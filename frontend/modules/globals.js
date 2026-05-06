@@ -77,3 +77,7 @@ let pageContextCache = null;
 
 // ========== 自定义智能体状态 ==========
 let customAgents = [];
+
+// ========== 搜索状态 ==========
+let searchResults = [];
+let currentSearchQuery = '';

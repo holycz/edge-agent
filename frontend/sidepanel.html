@@ -13,6 +13,27 @@
       <div class="ai-sidebar-left-header">
         <span class="ai-sidebar-left-title">💬 会话列表</span>
       </div>
+      
+      <!-- 搜索框 -->
+      <div class="ai-search-container" id="ai-search-container">
+        <div class="ai-search-box">
+          <span class="ai-search-icon">🔍</span>
+          <input type="text" class="ai-search-input" id="ai-search-input" placeholder="搜索对话历史 (Ctrl+K)...">
+          <button class="ai-search-clear" id="ai-search-clear" style="display: none;">×</button>
+        </div>
+      </div>
+      
+      <!-- 搜索结果面板 -->
+      <div class="ai-search-results" id="ai-search-results" style="display: none;">
+        <div class="ai-search-results-header">
+          <span class="ai-search-results-count" id="ai-search-results-count"></span>
+          <button class="ai-search-close" id="ai-search-close">关闭</button>
+        </div>
+        <div class="ai-search-results-list" id="ai-search-results-list">
+          <!-- 搜索结果将动态生成 -->
+        </div>
+      </div>
+      
       <div class="ai-session-list" id="ai-session-list">
         <!-- 会话列表项将动态生成 -->
       </div>
@@ -344,6 +365,7 @@
   <script src="modules/file-upload.js"></script>
   <script src="modules/page-context.js"></script>
   <script src="modules/modals.js"></script>
+  <script src="modules/search.js"></script>
   <script src="modules/main.js"></script>
 </body>
 </html>
