@@ -535,6 +535,7 @@ async function processStreamResponse(res, sessionId, abortController) {
             type: MESSAGE_TYPES.STREAM_CHUNK,
             content: "",
             contentType: "think_end",
+            performanceMetrics: delta.performanceMetrics,
             sessionId
           }).catch(() => {});
           continue;

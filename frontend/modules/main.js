@@ -175,7 +175,7 @@ async function checkPendingQuestion() {
           const newSession = SessionManager.createSession(feature.label, feature.agentId);
           
           addMessage('user', `${feature.icon} ${feature.label}：「${shortText}」`);
-          conversationHistory.push({ role: 'user', content: `${feature.icon} ${feature.label}：「${shortText}」` });
+          conversationHistory.push({ role: 'user', content: `${feature.icon} ${feature.label}：「${shortText}」`, timestamp: Date.now() });
           SessionManager.saveCurrentSessionMessages();
           renderSessionList();
           updateHeaderTitle();
@@ -235,7 +235,8 @@ async function handlePageAction(action) {
   addMessage('user', `${feature.icon} ${feature.label}`);
   conversationHistory.push({
     role: 'user',
-    content: `${feature.icon} ${feature.label}`
+    content: `${feature.icon} ${feature.label}`,
+    timestamp: Date.now()
   });
   SessionManager.saveCurrentSessionMessages();
 
@@ -608,7 +609,7 @@ async function sendMessage() {
     pageContext = await getCurrentPageContext();
   }
 
-  conversationHistory.push({ role: 'user', content: displayText });
+  conversationHistory.push({ role: 'user', content: displayText, timestamp: Date.now() });
   SessionManager.saveCurrentSessionMessages();
 
   if (currentSession && isFirstMessage) {

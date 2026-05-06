@@ -264,6 +264,41 @@ html, body {
   border-color: #22c55e;
 }
 
+/* ==================== 消息时间戳 ==================== */
+.ai-msg-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  opacity: 0.65;
+  user-select: none;
+}
+
+.ai-msg-time-user {
+  text-align: right;
+}
+
+.ai-msg-time-bot {
+  text-align: left;
+}
+
+/* ==================== 流式统计条 ==================== */
+.ai-msg-stats {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color-light);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.ai-msg-stats span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
 .ai-msg {
   padding: 12px 16px;
   border-radius: var(--radius-lg);

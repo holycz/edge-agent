@@ -38,7 +38,7 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
       const fullResponse = accumulatedThinkText
         ? `  \n${accumulatedThinkText}\n\n${accumulatedText}\n\n*[已中止]*`
         : `${accumulatedText}\n\n*[已中止]*`;
-      conversationHistory.push({ role: 'assistant', content: fullResponse });
+      conversationHistory.push({ role: 'assistant', content: fullResponse, timestamp: Date.now() });
       SessionManager.saveCurrentSessionMessages();
     }
   }
@@ -50,6 +50,7 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
   accumulatedText = '';
   accumulatedThinkText = '';
   isInThinkBlock = false;
+  streamStartTime = 0;
 
   isStreaming = true;
   currentStreamSessionId = 'stream_' + Date.now();
@@ -175,7 +176,7 @@ function abortStream() {
       const fullResponse = accumulatedThinkText
         ? `  \n${accumulatedThinkText}\n\n${accumulatedText}\n\n*[已中止]*`
         : `${accumulatedText}\n\n*[已中止]*`;
-      conversationHistory.push({ role: 'assistant', content: fullResponse });
+      conversationHistory.push({ role: 'assistant', content: fullResponse, timestamp: Date.now() });
       SessionManager.saveCurrentSessionMessages();
       renderSessionList();
     }
@@ -184,6 +185,7 @@ function abortStream() {
     currentStreamSessionId = null;
     updateSendButtonState();
     resetStreamState();
+    streamStartTime = 0;
     showToast('已中止回复');
   }
 }
@@ -198,6 +200,7 @@ function resetStreamState() {
   accumulatedText = '';
   accumulatedThinkText = '';
   isInThinkBlock = false;
+  streamStartTime = 0;
 }
 
 /**
@@ -233,6 +236,7 @@ function handleStreamMessage(msg) {
         const msgElements = addMessage('bot', '');
         currentBotBubble = msgElements;
       }
+      streamStartTime = Date.now();
       isInThinkBlock = true;
 
     } else if (contentType === STREAM_CONTENT_TYPES.THINK) {
@@ -262,6 +266,7 @@ function handleStreamMessage(msg) {
         const msgElements = addMessage('bot', '');
         currentBotBubble = msgElements;
       }
+      if (!streamStartTime) streamStartTime = Date.now();
       if (!currentBotBubble.content.querySelector('.ai-bot:not(.ai-think)')) {
         createContentBubble(currentBotBubble.content);
       }
@@ -277,6 +282,11 @@ function handleStreamMessage(msg) {
     if (msg.sessionId && msg.sessionId !== currentStreamSessionId) {
       return;
     }
+
+    // 计算流式统计
+    const elapsedSec = streamStartTime ? ((Date.now() - streamStartTime) / 1000).toFixed(1) : null;
+    const charCount = accumulatedText.length;
+
     const fullResponse = accumulatedThinkText
       ? `  \n${accumulatedThinkText}\n\n${accumulatedText}`
       : accumulatedText;
@@ -285,7 +295,7 @@ function handleStreamMessage(msg) {
       const savedResponse = fullResponse.length > maxResponseLength
         ? fullResponse.substring(0, maxResponseLength) + '\n...(回复已截断保存)'
         : fullResponse;
-      conversationHistory.push({ role: 'assistant', content: savedResponse });
+      conversationHistory.push({ role: 'assistant', content: savedResponse, timestamp: Date.now() });
 
       const maxTotalMessages = (config.maxHistoryRounds || 5) * 2 + 2;
       if (conversationHistory.length > maxTotalMessages * 2) {
@@ -299,6 +309,16 @@ function handleStreamMessage(msg) {
       renderSessionList();
     }
 
+    // 渲染统计条
+    if (currentBotBubble && elapsedSec) {
+      const tps = elapsedSec > 0 ? (charCount / parseFloat(elapsedSec)).toFixed(1) : '0';
+      const statsDiv = document.createElement('div');
+      statsDiv.className = 'ai-msg-stats';
+      statsDiv.innerHTML = `<span>📝 ${charCount} 字</span><span>⏱ ${elapsedSec}s</span><span>⚡ ${tps} 字/s</span>`;
+      currentBotBubble.content.appendChild(statsDiv);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
     isStreaming = false;
     currentStreamSessionId = null;
     updateSendButtonState();
@@ -308,6 +328,7 @@ function handleStreamMessage(msg) {
     accumulatedText = '';
     accumulatedThinkText = '';
     isInThinkBlock = false;
+    streamStartTime = 0;
 
   } else if (msg.type === MESSAGE_TYPES.STREAM_ERROR) {
     if (msg.sessionId && msg.sessionId !== currentStreamSessionId) {

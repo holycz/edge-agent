@@ -67,6 +67,7 @@ let currentThinkContainer = null;
 let accumulatedText = '';
 let accumulatedThinkText = '';
 let isInThinkBlock = false;
+let streamStartTime = 0;
 
 // ========== 文件上传状态 ==========
 let uploadedFiles = [];

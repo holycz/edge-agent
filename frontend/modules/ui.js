@@ -8,12 +8,40 @@
 // let messagesContainer, inputTextarea, sendButton, configPanel;
 
 /**
+ * 格式化时间戳 (HH:MM:SS)
+ * @param {number} ts - 毫秒时间戳
+ * @returns {string} 格式化后的时间
+ */
+function formatTimestamp(ts) {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+/**
+ * 格式化完整时间戳（含日期）
+ * @param {number} ts - 毫秒时间戳
+ * @returns {string} 格式化后的日期时间
+ */
+function formatDateTimestamp(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const time = formatTimestamp(ts);
+  if (isToday) return `今天 ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return `昨天 ${time}`;
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
+}
+
+/**
  * 添加消息到界面
  * @param {string} role - 消息角色（user/bot）
  * @param {string} text - 消息内容
+ * @param {number} [timestamp] - 毫秒时间戳（可选）
  * @returns {Object} 消息元素对象
  */
-function addMessage(role, text) {
+function addMessage(role, text, timestamp) {
   const row = document.createElement('div');
   row.className = `ai-msg-row ai-${role}-row`;
 
@@ -90,6 +118,15 @@ function addMessage(role, text) {
   } else {
     row.appendChild(avatar);
     row.appendChild(content);
+  }
+
+  // 添加时间戳
+  if (timestamp) {
+    const timeDiv = document.createElement('div');
+    timeDiv.className = `ai-msg-time ai-msg-time-${role}`;
+    timeDiv.textContent = formatTimestamp(timestamp);
+    timeDiv.title = formatDateTimestamp(timestamp);
+    content.appendChild(timeDiv);
   }
 
   messagesContainer.appendChild(row);
@@ -358,7 +395,7 @@ function renderConversationHistory() {
   messagesContainer.innerHTML = '';
   conversationHistory.forEach(msg => {
     if (msg.role !== 'system') {
-      addMessage(msg.role === 'assistant' ? 'bot' : 'user', msg.content);
+      addMessage(msg.role === 'assistant' ? 'bot' : 'user', msg.content, msg.timestamp);
     }
   });
 }
