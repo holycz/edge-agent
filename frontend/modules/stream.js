@@ -309,13 +309,20 @@ function handleStreamMessage(msg) {
       renderSessionList();
     }
 
-    // 渲染统计条
+    // 渲染统计条和时间戳
     if (currentBotBubble && elapsedSec) {
       const tps = elapsedSec > 0 ? (charCount / parseFloat(elapsedSec)).toFixed(1) : '0';
       const statsDiv = document.createElement('div');
       statsDiv.className = 'ai-msg-stats';
       statsDiv.innerHTML = `<span>📝 ${charCount} 字</span><span>⏱ ${elapsedSec}s</span><span>⚡ ${tps} 字/s</span>`;
       currentBotBubble.content.appendChild(statsDiv);
+
+      const timeDiv = document.createElement('div');
+      timeDiv.className = 'ai-msg-time ai-msg-time-bot';
+      timeDiv.textContent = formatTimestamp(Date.now());
+      timeDiv.title = formatDateTimestamp(Date.now());
+      currentBotBubble.content.appendChild(timeDiv);
+
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 

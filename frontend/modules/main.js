@@ -174,7 +174,7 @@ async function checkPendingQuestion() {
           
           const newSession = SessionManager.createSession(feature.label, feature.agentId);
           
-          addMessage('user', `${feature.icon} ${feature.label}：「${shortText}」`);
+          addMessage('user', `${feature.icon} ${feature.label}：「${shortText}」`, Date.now());
           conversationHistory.push({ role: 'user', content: `${feature.icon} ${feature.label}：「${shortText}」`, timestamp: Date.now() });
           SessionManager.saveCurrentSessionMessages();
           renderSessionList();
@@ -232,7 +232,7 @@ async function handlePageAction(action) {
   renderSessionList();
   updateHeaderTitle();
 
-  addMessage('user', `${feature.icon} ${feature.label}`);
+  addMessage('user', `${feature.icon} ${feature.label}`, Date.now());
   conversationHistory.push({
     role: 'user',
     content: `${feature.icon} ${feature.label}`,
@@ -594,7 +594,7 @@ async function sendMessage() {
     displayText = text + '\n\n📎 ' + fileNames;
   }
 
-  addMessage('user', displayText);
+  addMessage('user', displayText, Date.now());
 
   const currentSession = SessionManager.getCurrentSession();
   const dialogId = SessionManager.getCurrentDialogId();
