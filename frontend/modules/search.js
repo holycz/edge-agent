@@ -351,12 +351,6 @@ function jumpToSearchResult(resultIndex, sessionId) {
   renderConversationHistory();
   updateHeaderTitle();
   
-  // 折叠侧边栏以显示消息
-  const sidebar = document.getElementById('ai-sidebar-left');
-  if (sidebar && !sidebar.classList.contains('collapsed')) {
-    sidebar.classList.add('collapsed');
-  }
-  
   // 高亮目标消息（等待 DOM 渲染完成）
   setTimeout(() => {
     highlightMessage(result.messageIndex);
