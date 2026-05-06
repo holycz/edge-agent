@@ -40,6 +40,11 @@ const FILE_LIMITS = {
   MAX_HISTORY_RESPONSE_LENGTH: 8000,
 };
 
+const ERROR_MESSAGES = {
+  NO_APPROVAL_CONTENT: '未在当前页面找到公文正文或领导批示内容，请确保您正在浏览OA审批页面。',
+  NO_PAGE_CONTENT: '无法获取当前网页内容，请确保您正在浏览一个可访问的网页。',
+};
+
 // ========== DOM元素引用 ==========
 let messagesContainer = null;
 let inputTextarea = null;
