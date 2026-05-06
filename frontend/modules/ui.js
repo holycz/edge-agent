@@ -8,26 +8,16 @@
 // let messagesContainer, inputTextarea, sendButton, configPanel;
 
 /**
- * 格式化时间戳 (HH:MM:SS)
+ * 格式化时间戳（仿微信：今天只显示时间，昨天显示"昨天 HH:MM"，更早显示日期+时间）
  * @param {number} ts - 毫秒时间戳
  * @returns {string} 格式化后的时间
  */
 function formatTimestamp(ts) {
   const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-}
-
-/**
- * 格式化完整时间戳（含日期）
- * @param {number} ts - 毫秒时间戳
- * @returns {string} 格式化后的日期时间
- */
-function formatDateTimestamp(ts) {
-  const d = new Date(ts);
   const now = new Date();
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   const isToday = d.toDateString() === now.toDateString();
-  const time = formatTimestamp(ts);
-  if (isToday) return `今天 ${time}`;
+  if (isToday) return time;
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   if (d.toDateString() === yesterday.toDateString()) return `昨天 ${time}`;
@@ -125,7 +115,6 @@ function addMessage(role, text, timestamp) {
     const timeDiv = document.createElement('div');
     timeDiv.className = `ai-msg-time ai-msg-time-${role}`;
     timeDiv.textContent = formatTimestamp(timestamp);
-    timeDiv.title = formatDateTimestamp(timestamp);
     content.appendChild(timeDiv);
   }
 

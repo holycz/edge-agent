@@ -320,7 +320,6 @@ function handleStreamMessage(msg) {
       const timeDiv = document.createElement('div');
       timeDiv.className = 'ai-msg-time ai-msg-time-bot';
       timeDiv.textContent = formatTimestamp(Date.now());
-      timeDiv.title = formatDateTimestamp(Date.now());
       currentBotBubble.content.appendChild(timeDiv);
 
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
