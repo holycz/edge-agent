@@ -444,9 +444,8 @@ async def upload_files(
     Content-Type: multipart/form-data
     
     form-data:
-    - Content-Type: application/json
-    - param: {"session_id":"xxx","agent_id":"xxx","user_id":"xxx","chat_type":"save","requestId":"xxx","dialog_id":"xxx"}
     - files: 文件
+    - param: {"session_id":"xxx","agent_id":"xxx","user_id":"xxx","chat_type":"save","requestId":"xxx","dialog_id":"xxx","model_instance_id":"8"}
     
     返回格式:
     {

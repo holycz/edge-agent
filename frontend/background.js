@@ -586,13 +586,13 @@ async function handleFileUpload(msg, sendResponse) {
       chat_type: "save",
       requestId: msg.requestId,
       dialog_id: msg.dialogId || "",
+      model_instance_id: "8",
     });
 
-    // 构建 FormData
+    // 构建 FormData（顺序：files 在前，param 在后）
     const formData = new FormData();
-    formData.append("Content-Type", "application/json");
-    formData.append("param", param);
     formData.append("files", blob, msg.fileName);
+    formData.append("param", param);
 
     const backendUrl = await getBackendUrl();
 
