@@ -154,6 +154,7 @@ async function verifyAgent(agentId, agentKey) {
         use_history: 'false',
         ifInternet: false,
         ifCallback: true,
+        agent_state: 'save',
       }),
       signal: controller.signal,
     });

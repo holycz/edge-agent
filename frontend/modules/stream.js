@@ -111,6 +111,7 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
     model_id: "",
     ifInternet: false,
     ifCallback: true,
+    agent_state: "save",
   };
 
   // 添加文件引用
@@ -122,7 +123,6 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
     }));
     requestBody.referenced_objects = JSON.stringify({ file: fileReferences });
     requestBody.referenced_object_type = "file";
-    requestBody.agent_state = "save";
   }
 
   try {
