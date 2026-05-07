@@ -105,7 +105,7 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
     dialog_id: currentDialogId,
     agent_id: actualAgentId,
     session_id: actualAgentId,
-    user_id: actualAgentId,
+    user_id: currentDialogId,
     question: keyword,
     use_history: "true",
     model_id: "",

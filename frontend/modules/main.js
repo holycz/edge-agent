@@ -947,6 +947,7 @@ async function handleClearHistory() {
   // 获取当前会话信息
   const currentSession = SessionManager.getCurrentSession();
   const agentId = currentSession?.agentType || AGENT_IDS.CHAT;
+  const dialogId = currentSession?.dialogId || SessionManager.getCurrentDialogId();
 
   // 清空对话框
   messagesContainer.innerHTML = '';
@@ -968,7 +969,7 @@ async function handleClearHistory() {
         agent_id: agentId,
         chat_type: 'save',
         session_id: agentId,
-        user_id: agentId,
+        user_id: dialogId,
       }),
     });
 

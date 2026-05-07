@@ -582,7 +582,7 @@ async function handleFileUpload(msg, sendResponse) {
     const param = JSON.stringify({
       session_id: msg.agentId,
       agent_id: msg.agentId,
-      user_id: msg.agentId,
+      user_id: msg.dialogId || "",
       chat_type: "save",
       requestId: msg.requestId,
       dialog_id: msg.dialogId || "",
