@@ -6,13 +6,16 @@
 
 // 文件上传状态已在 globals.js 中定义
 
+let lastUploadFile = null; // 记录上次上传失败的文件，用于重试
+
 /**
  * 更新上传进度条
  * @param {number} percent - 进度百分比 (0-100)
  * @param {string} status - 状态文本
  * @param {string} statusType - 状态类型 (uploading, success, error)
+ * @param {boolean} showRetry - 是否显示重试按钮
  */
-function updateUploadProgress(percent, status = '', statusType = '') {
+function updateUploadProgress(percent, status = '', statusType = '', showRetry = false) {
   const progressBar = document.getElementById('ai-upload-progress');
   const progressFill = document.getElementById('ai-upload-progress-bar');
   const progressText = document.getElementById('ai-upload-progress-text');
@@ -37,7 +40,59 @@ function updateUploadProgress(percent, status = '', statusType = '') {
     if (statusType) {
       statusEl.classList.add(statusType);
     }
+
+    // 添加重试按钮
+    if (showRetry && lastUploadFile) {
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'ai-upload-retry-btn';
+      retryBtn.textContent = '重新上传';
+      retryBtn.onclick = () => retryUpload();
+      statusEl.appendChild(retryBtn);
+    }
   }
+}
+
+/**
+ * 重试上传上次失败的文件
+ */
+function retryUpload() {
+  if (!lastUploadFile) return;
+
+  const file = lastUploadFile;
+  lastUploadFile = null;
+
+  // 重新触发上传
+  isUploading = true;
+  updateUploadButtonState();
+  updateUploadProgress(0, '准备重新上传...', 'uploading');
+
+  uploadFileToServer(file).then(result => {
+    if (result && result.success && result.files && result.files.length > 0) {
+      const uploadedFile = result.files[0];
+      uploadedFiles = [{
+        fileId: uploadedFile.fileId,
+        fileName: file.name
+      }];
+      updateUploadProgress(100, '上传完成！', 'success');
+      showFilePreview(file.name, true);
+      showToast('文件上传成功');
+      setTimeout(hideUploadProgress, 3000);
+    } else {
+      let errorMsg = result?.message || '未知错误';
+      if (errorMsg.startsWith('文件上传失败: ')) {
+        errorMsg = errorMsg.replace('文件上传失败: ', '');
+      }
+      updateUploadProgress(0, '上传失败: ' + errorMsg, 'error', true);
+      lastUploadFile = file;
+    }
+  }).catch(error => {
+    console.error('[FileUpload] 重试上传失败:', error);
+    updateUploadProgress(0, '上传失败: ' + error.message, 'error', true);
+    lastUploadFile = file;
+  }).finally(() => {
+    isUploading = false;
+    updateUploadButtonState();
+  });
 }
 
 /**
@@ -85,6 +140,7 @@ async function handleFileSelect(event) {
         fileId: uploadedFile.fileId,
         fileName: file.name
       }];
+      lastUploadFile = null;
       updateUploadProgress(100, '上传完成！', 'success');
       showFilePreview(file.name, true);
       showToast('文件上传成功');
@@ -95,13 +151,21 @@ async function handleFileSelect(event) {
       if (errorMsg.startsWith('文件上传失败: ')) {
         errorMsg = errorMsg.replace('文件上传失败: ', '');
       }
-      updateUploadProgress(0, '上传失败: ' + errorMsg, 'error');
+
+      // code 9999 服务器错误，显示重试按钮
+      if (result?.code === 9999 || result?.code === '9999') {
+        lastUploadFile = file;
+        updateUploadProgress(0, '上传失败: ' + errorMsg, 'error', true);
+      } else {
+        updateUploadProgress(0, '上传失败: ' + errorMsg, 'error');
+      }
       hideFilePreview();
       showToast('文件上传失败: ' + errorMsg);
     }
   } catch (error) {
     console.error('[FileUpload] 文件上传失败:', error);
-    updateUploadProgress(0, '上传失败: ' + error.message, 'error');
+    lastUploadFile = file;
+    updateUploadProgress(0, '上传失败: ' + error.message, 'error', true);
     hideFilePreview();
     showToast('文件上传失败: ' + error.message);
   } finally {
