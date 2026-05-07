@@ -104,7 +104,7 @@ python run.py
 API_KEY=your_api_key_here
 API_URL=https://integrate.api.nvidia.com/v1
 MODEL=qwen/qwen3-next-80b-a3b-instruct
-FILE_UPLOAD_URL=http://124.225.137.100:8101/aistar_server/sdk/agent/uploadFiles  # 文件上传服务地址
+FILE_UPLOAD_URL=http://124.225.137.100:8101/aistar_server/sdk/agent/upload  # 文件上传服务地址
 ```
 
 ### 3.4 流式事件格式

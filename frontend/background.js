@@ -32,7 +32,7 @@ const MENU_IDS = {
 
 const API_ENDPOINTS = {
   AGENT: '/sxzypt/py_talkHub/agent/agent',
-  UPLOAD: '/sxzypt/py_talkHub/agent/uploadFiles',
+  UPLOAD: '/sxzypt/aistar_server/agent/upload',
 };
 
 // ========== 后端URL配置 ==========

@@ -432,7 +432,7 @@ async def unified_agent(request: AgentRequest):
 # ========== 文件上传接口 ==========
 
 
-@router.post("/sxzypt/py_talkHub/agent/uploadFiles")
+@router.post("/sxzypt/aistar_server/agent/upload")
 async def upload_files(
     files: UploadFile = File(...),
     param: str = Form(...),
@@ -440,7 +440,7 @@ async def upload_files(
     """统一文件上传接口 - 通过 param 中的 agent_id 区分不同智能体
     
     请求示例:
-    POST /sxzypt/py_talkHub/agent/uploadFiles
+    POST /sxzypt/aistar_server/agent/upload
     Content-Type: multipart/form-data
     
     form-data:

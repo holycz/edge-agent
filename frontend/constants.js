@@ -96,7 +96,7 @@ const EXCLUDED_PAGE_PATTERNS = [
 // ========== API端点 ==========
 const API_ENDPOINTS = {
   AGENT: '/sxzypt/py_talkHub/agent/agent',
-  UPLOAD: '/sxzypt/py_talkHub/agent/uploadFiles',
+  UPLOAD: '/sxzypt/aistar_server/agent/upload',
 };
 
 // ========== 文件限制 ==========
