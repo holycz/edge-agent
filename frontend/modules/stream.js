@@ -104,6 +104,7 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
     request_id: requestId,
     dialog_id: currentDialogId,
     agent_id: actualAgentId,
+    session_id: actualAgentId,
     user_id: actualAgentId,
     question: keyword,
     use_history: "true",
@@ -121,7 +122,6 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
     }));
     requestBody.referenced_objects = JSON.stringify({ file: fileReferences });
     requestBody.referenced_object_type = "file";
-    requestBody.session_id = actualAgentId;
     requestBody.agent_state = "save";
   }
 

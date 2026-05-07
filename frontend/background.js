@@ -62,17 +62,8 @@ async function testBackendUrl(url) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    const response = await fetch(`${url}${API_ENDPOINTS.AGENT}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        request_id: "test-" + Date.now(),
-        dialogId: "test-" + Date.now(),
-        agent_id: "ddf09cedfcbd4d188adc528461a91392",
-        question: "test"
-      }),
+    const response = await fetch(url, {
+      method: "HEAD",
       signal: controller.signal
     });
 

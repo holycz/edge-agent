@@ -70,11 +70,11 @@ async function saveConfig(newConfig) {
 async function checkBackendStatus() {
   try {
     const backendUrl = await getBackendUrl();
-    const response = await fetch(backendUrl.replace(/\/$/, '') + '/docs', {
+    const response = await fetch(backendUrl, {
       method: 'HEAD',
       signal: AbortSignal.timeout(5000),
     });
-    if (response.ok || response.status === 405) {
+    if (response.status !== 0) {
       return { available: true, message: '后端服务正常' };
     }
     return { available: false, message: '后端服务异常' };

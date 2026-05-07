@@ -148,6 +148,7 @@ async function verifyAgent(agentId, agentKey) {
         request_id: 'verify-' + Date.now(),
         dialog_id: 'verify-' + Date.now(),
         agent_id: agentId,
+        session_id: agentId,
         user_id: agentId,
         question: '你好',
         use_history: 'false',
