@@ -456,6 +456,12 @@ function setupEventListeners() {
     fileRemoveBtn.addEventListener('click', removeUploadedFile);
   }
 
+  // 清空对话历史按钮
+  const clearHistoryBtn = document.getElementById('ai-clear-history-btn');
+  if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener('click', handleClearHistory);
+  }
+
   // 新增智能体按钮
   const addAgentBtn = document.getElementById('ai-add-agent-btn');
   if (addAgentBtn) {
@@ -920,6 +926,58 @@ function initShortcutHelp() {
       return;
     }
   });
+}
+
+// ========== 清空对话历史 ==========
+
+/**
+ * 清空当前对话历史
+ * 弹窗确认后清空对话框，并发送POST请求到后端截断会话
+ */
+async function handleClearHistory() {
+  if (conversationHistory.length === 0) {
+    showToast('当前对话历史为空');
+    return;
+  }
+
+  if (!confirm('确定要清空对话历史吗？')) {
+    return;
+  }
+
+  // 获取当前会话信息
+  const currentSession = SessionManager.getCurrentSession();
+  const agentId = currentSession?.agentType || AGENT_IDS.CHAT;
+
+  // 清空对话框
+  messagesContainer.innerHTML = '';
+  conversationHistory = [];
+  clearFileUploadState();
+  renderQuickPrompts();
+
+  showToast('对话历史已清空');
+
+  // 发送POST请求到后端截断会话
+  try {
+    const backendUrl = await getBackendUrl();
+    const response = await fetch(`${backendUrl}/sxzypt/aistar_server/agent/truncateSingleSession`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        agent_id: agentId,
+        chat_type: 'save',
+        session_id: agentId,
+        user_id: agentId,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[Main] 截断会话失败:', response.status);
+    }
+  } catch (e) {
+    console.error('[Main] 截断会话请求异常:', e);
+  }
 }
 
 // ========== Chrome消息监听 ==========
