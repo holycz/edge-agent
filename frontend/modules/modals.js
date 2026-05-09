@@ -73,11 +73,14 @@ async function renderCustomAgentsInModal() {
   }
   
   customAgentSection.style.display = 'block';
-  customAgentList.innerHTML = agents.map(agent => `
+  customAgentList.innerHTML = agents.map(agent => {
+    const streamLabel = agent.streamType === 'stream' ? '流式' : '非流式';
+    const streamClass = agent.streamType === 'stream' ? 'ai-tag-stream' : 'ai-tag-json';
+    return `
     <div class="ai-agent-item ai-agent-item-custom" data-agent="${agent.id}">
       <span class="ai-agent-icon">${agent.icon || '🤖'}</span>
       <div class="ai-agent-info">
-        <div class="ai-agent-name">${agent.name}</div>
+        <div class="ai-agent-name">${agent.name} <span class="ai-agent-tag ${streamClass}">${streamLabel}</span></div>
         <div class="ai-agent-desc">${agent.desc || ''}</div>
       </div>
       <div class="ai-agent-actions">
@@ -85,7 +88,8 @@ async function renderCustomAgentsInModal() {
         <button class="ai-agent-delete-btn" data-agent-id="${agent.id}" title="删除">🗑️</button>
       </div>
     </div>
-  `).join('');
+    `;
+  }).join('');
   
   // 绑定选择事件
   customAgentList.querySelectorAll('.ai-agent-item').forEach(item => {
@@ -264,34 +268,31 @@ async function handleAddAgentVerify() {
   verifyBtn.textContent = isEditing ? '✅ 验证并更新' : '✅ 验证并保存';
 
   if (result.success) {
-    statusEl.textContent = result.message;
+    const streamLabel = result.streamType === 'stream' ? '流式' : result.streamType === 'json' ? 'JSON' : '未知';
+    statusEl.textContent = `${result.message}（${streamLabel}响应）`;
     statusEl.className = 'ai-add-agent-verify-status success';
+
+    const agentData = {
+      id: agentId,
+      name: name,
+      key: agentKey,
+      icon: icon,
+      desc: desc,
+      streamType: result.streamType || 'unknown',
+      createdAt: Date.now(),
+    };
 
     if (isEditing) {
       // 编辑模式：删除旧的再添加新的
       await CustomAgentManager.remove(isEditing);
-      await CustomAgentManager.add({
-        id: agentId,
-        name: name,
-        key: agentKey,
-        icon: icon,
-        desc: desc,
-        createdAt: Date.now(),
-      });
+      await CustomAgentManager.add(agentData);
       setTimeout(() => {
         closeAddAgentModal();
         showToast(`智能体「${name}」已更新`);
       }, 800);
     } else {
       // 新增模式
-      await CustomAgentManager.add({
-        id: agentId,
-        name: name,
-        key: agentKey,
-        icon: icon,
-        desc: desc,
-        createdAt: Date.now(),
-      });
+      await CustomAgentManager.add(agentData);
       setTimeout(() => {
         closeAddAgentModal();
         showToast(`智能体「${name}」已添加`);
@@ -343,19 +344,23 @@ function renderManageAgentList() {
   listEl.style.display = 'flex';
   if (emptyEl) emptyEl.style.display = 'none';
 
-  listEl.innerHTML = agents.map(agent => `
+  listEl.innerHTML = agents.map(agent => {
+    const streamLabel = agent.streamType === 'stream' ? '流式' : '非流式';
+    const streamClass = agent.streamType === 'stream' ? 'ai-tag-stream' : 'ai-tag-json';
+    return `
     <div class="ai-manage-agent-item" data-agent-id="${agent.id}">
       <div class="ai-manage-agent-info">
         <span class="ai-manage-agent-icon">${agent.icon || '🤖'}</span>
         <div class="ai-manage-agent-detail">
-          <div class="ai-manage-agent-name">${agent.name}</div>
+          <div class="ai-manage-agent-name">${agent.name} <span class="ai-agent-tag ${streamClass}">${streamLabel}</span></div>
           <div class="ai-manage-agent-id">ID: ${agent.id}</div>
           ${agent.desc ? `<div class="ai-manage-agent-desc">${agent.desc}</div>` : ''}
         </div>
       </div>
       <button class="ai-manage-agent-delete" data-agent-id="${agent.id}">🗑️ 删除</button>
     </div>
-  `).join('');
+    `;
+  }).join('');
 
   listEl.querySelectorAll('.ai-manage-agent-delete').forEach(btn => {
     btn.onclick = async () => {

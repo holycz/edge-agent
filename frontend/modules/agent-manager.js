@@ -178,7 +178,14 @@ async function verifyAgent(agentId, agentKey) {
     }
 
     if (response.ok || response.status === 200) {
-      return { success: true, message: '验证成功' };
+      const contentType = response.headers.get('content-type') || '';
+      let streamType = 'unknown';
+      if (contentType.includes('text/event-stream')) {
+        streamType = 'stream';
+      } else if (contentType.includes('application/json')) {
+        streamType = 'json';
+      }
+      return { success: true, message: '验证成功', streamType };
     }
 
     return { success: false, message: `验证失败：服务返回状态码 ${response.status}` };

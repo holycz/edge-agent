@@ -419,8 +419,16 @@ async function handleStreamRequest(msg, sender, sendResponse) {
       return;
     }
 
-    // 处理流式响应
-    await processStreamResponse(res, sessionId, abortController);
+    // 根据响应类型处理
+    const contentType = res.headers.get('content-type') || '';
+    
+    if (contentType.includes('application/json')) {
+      // JSON响应：一次性读取并返回
+      await processJsonResponse(res, sessionId);
+    } else {
+      // 流式响应：使用SSE处理
+      await processStreamResponse(res, sessionId, abortController);
+    }
 
   } catch (e) {
     if (e.name === 'AbortError') {
@@ -440,6 +448,75 @@ async function handleStreamRequest(msg, sender, sendResponse) {
     }
     activeStreams.delete(sessionId);
   }
+}
+
+/**
+ * 处理JSON响应数据
+ * @param {Response} res - HTTP响应对象
+ * @param {string} sessionId - 会话ID
+ */
+async function processJsonResponse(res, sessionId) {
+  try {
+    const jsonData = await res.json();
+    console.log("[Background] JSON响应:", jsonData);
+    
+    // 尝试从不同格式的JSON中提取内容
+    let content = '';
+    
+    // 格式1: { "choices": [{ "message": { "content": "..." } }] }
+    if (jsonData.choices && jsonData.choices[0]?.message?.content) {
+      content = jsonData.choices[0].message.content;
+    }
+    // 格式2: { "data": { "content": "..." } }
+    else if (jsonData.data?.content) {
+      content = jsonData.data.content;
+    }
+    // 格式3: { "content": "..." }
+    else if (jsonData.content) {
+      content = jsonData.content;
+    }
+    // 格式4: { "answer": "..." }
+    else if (jsonData.answer) {
+      content = jsonData.answer;
+    }
+    // 格式5: { "result": "..." }
+    else if (jsonData.result) {
+      content = jsonData.result;
+    }
+    // 格式6: { "message": "..." }
+    else if (jsonData.message) {
+      content = jsonData.message;
+    }
+    // 兜底：将整个JSON作为内容
+    else {
+      content = JSON.stringify(jsonData, null, 2);
+    }
+    
+    // 发送内容
+    if (content) {
+      chrome.runtime.sendMessage({
+        type: MESSAGE_TYPES.STREAM_CHUNK,
+        content: content,
+        contentType: "content",
+        sessionId
+      }).catch(() => {});
+    }
+    
+    // 发送完成信号
+    chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.STREAM_DONE,
+      sessionId
+    }).catch(() => {});
+    
+  } catch (e) {
+    console.error("[Background] JSON解析失败:", e);
+    chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.STREAM_ERROR,
+      error: `JSON解析失败: ${e.message}`,
+      sessionId
+    }).catch(() => {});
+  }
+  activeStreams.delete(sessionId);
 }
 
 /**
