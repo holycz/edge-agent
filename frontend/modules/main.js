@@ -509,6 +509,20 @@ function setupEventListeners() {
       showToast('已恢复默认配置');
     }
   });
+
+  // 点击主内容区域时收起会话列表
+  const mainContent = document.querySelector('.ai-main-content');
+  if (mainContent) {
+    mainContent.addEventListener('click', (e) => {
+      // 排除点击会话列表按钮的情况
+      if (e.target.closest('.ai-toggle-sidebar')) return;
+      
+      const sidebar = document.getElementById('ai-sidebar-left');
+      if (sidebar && !sidebar.classList.contains('collapsed')) {
+        sidebar.classList.add('collapsed');
+      }
+    });
+  }
 }
 
 /**

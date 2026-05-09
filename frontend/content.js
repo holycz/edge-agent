@@ -11,6 +11,7 @@ const MESSAGE_TYPES = {
   GET_APPROVAL_PAGE_CONTENT: 'GET_APPROVAL_PAGE_CONTENT',
   PAGE_CONTENT_CHANGED: 'PAGE_CONTENT_CHANGED',
   OPEN_SIDEPANEL: 'OPEN_SIDEPANEL',
+  TOGGLE_SIDEPANEL: 'TOGGLE_SIDEPANEL',
 };
 
 const EXCLUDED_PAGE_PATTERNS = [
@@ -95,6 +96,8 @@ const UI_COMPONENTS_TO_REMOVE = [
 
 /** 双击功能状态 */
 let doubleClickEnabled = false;
+/** 侧边栏状态 */
+let sidePanelOpen = false;
 
 /** 页面变化检测相关状态 */
 let pageChangeObserver = null;
@@ -835,7 +838,13 @@ function getPageMetadata() {
  */
 async function handleDoubleClick() {
   if (!doubleClickEnabled) return;
-  if (!getSelectedText()) chrome.runtime.sendMessage({ type: MESSAGE_TYPES.OPEN_SIDEPANEL });
+  if (!getSelectedText()) {
+    chrome.runtime.sendMessage({ 
+      type: MESSAGE_TYPES.TOGGLE_SIDEPANEL,
+      isOpen: sidePanelOpen
+    });
+    sidePanelOpen = !sidePanelOpen;
+  }
 }
 
 /**

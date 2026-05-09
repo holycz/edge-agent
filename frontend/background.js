@@ -7,6 +7,7 @@
 // ========== 常量定义（Service Worker 中无法直接 import） ==========
 const MESSAGE_TYPES = {
   OPEN_SIDEPANEL: 'OPEN_SIDEPANEL',
+  TOGGLE_SIDEPANEL: 'TOGGLE_SIDEPANEL',
   GET_BACKEND_URL: 'GET_BACKEND_URL',
   API_STREAM_REQUEST: 'API_STREAM_REQUEST',
   ABORT_STREAM: 'ABORT_STREAM',
@@ -331,6 +332,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.sidePanel.open({ windowId: sender.tab.windowId })
       .then(() => sendResponse({ success: true }))
       .catch(e => sendResponse({ success: false, error: e.message }));
+    return true;
+  }
+
+  // 切换侧边栏
+  if (msg.type === MESSAGE_TYPES.TOGGLE_SIDEPANEL) {
+    if (!sender.tab || !sender.tab.windowId) {
+      sendResponse({ success: false, error: "Invalid sender tab" });
+      return false;
+    }
+    // 如果当前是打开状态，则关闭；否则打开
+    if (msg.isOpen) {
+      chrome.sidePanel.setOptions({ enabled: false })
+        .then(() => chrome.sidePanel.setOptions({ enabled: true }))
+        .then(() => sendResponse({ success: true, action: 'close' }))
+        .catch(e => sendResponse({ success: false, error: e.message }));
+    } else {
+      chrome.sidePanel.open({ windowId: sender.tab.windowId })
+        .then(() => sendResponse({ success: true, action: 'open' }))
+        .catch(e => sendResponse({ success: false, error: e.message }));
+    }
     return true;
   }
 
