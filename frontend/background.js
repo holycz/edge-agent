@@ -583,7 +583,7 @@ async function handleFileUpload(msg, sendResponse) {
       session_id: msg.agentId,
       agent_id: msg.agentId,
       user_id: msg.dialogId || "",
-      chat_type: "save",
+      chat_type: "listing",
       requestId: msg.requestId,
       dialog_id: msg.dialogId || "",
       model_instance_id: "8",

@@ -945,7 +945,7 @@ async function handleClearHistory() {
       },
       body: JSON.stringify({
         agent_id: agentId,
-        chat_type: 'save',
+        chat_type: 'listing',
         session_id: agentId,
         user_id: dialogId,
       }),

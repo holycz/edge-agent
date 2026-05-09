@@ -446,7 +446,7 @@ async def upload_files(
     
     form-data:
     - files: 文件
-    - param: {"session_id":"xxx","agent_id":"xxx","user_id":"xxx","chat_type":"save","requestId":"xxx","dialog_id":"xxx","model_instance_id":"8"}
+    - param: {"session_id":"xxx","agent_id":"xxx","user_id":"xxx","chat_type":"listing","requestId":"xxx","dialog_id":"xxx","model_instance_id":"8"}
     
     返回格式:
     {
