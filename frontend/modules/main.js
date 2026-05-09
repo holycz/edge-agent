@@ -462,18 +462,6 @@ function setupEventListeners() {
     clearHistoryBtn.addEventListener('click', handleClearHistory);
   }
 
-  // 新增智能体按钮
-  const addAgentBtn = document.getElementById('ai-add-agent-btn');
-  if (addAgentBtn) {
-    addAgentBtn.addEventListener('click', openAddAgentModal);
-  }
-
-  // 管理智能体按钮
-  const manageAgentBtn = document.getElementById('ai-manage-agent-btn');
-  if (manageAgentBtn) {
-    manageAgentBtn.addEventListener('click', openManageAgentModal);
-  }
-
   // 新增智能体弹窗事件
   const addAgentModal = document.getElementById('ai-add-agent-modal');
   if (addAgentModal) {
@@ -487,16 +475,6 @@ function setupEventListeners() {
     if (verifyBtn) {
       verifyBtn.addEventListener('click', handleAddAgentVerify);
     }
-  }
-
-  // 管理智能体弹窗事件
-  const manageAgentModal = document.getElementById('ai-manage-agent-modal');
-  if (manageAgentModal) {
-    manageAgentModal.querySelector('.ai-manage-agent-modal-close').addEventListener('click', closeManageAgentModal);
-    manageAgentModal.querySelector('.ai-manage-agent-modal-close-btn').addEventListener('click', closeManageAgentModal);
-    manageAgentModal.addEventListener('click', (e) => {
-      if (e.target === manageAgentModal) closeManageAgentModal();
-    });
   }
 
   // 配置保存按钮

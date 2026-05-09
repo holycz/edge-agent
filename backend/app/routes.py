@@ -247,22 +247,23 @@ def _parse_keyword_for_qa(
 
 
 def _build_messages_for_agent(agent_id: str, question: str) -> List[ChatMessage]:
-    """根据智能体ID构建对应的消息列表"""
+    """根据智能体ID构建对应的消息列表
+    
+    Args:
+        agent_id: 智能体ID
+        question: 用户问题
+    """
+    # 自定义智能体（不在内置列表中）直接传用户消息，不使用 system prompt
+    if agent_id not in AGENT_SYSTEM_PROMPTS:
+        return [
+            ChatMessage(role="user", content=question),
+        ]
+    
     system_prompt = AGENT_SYSTEM_PROMPTS.get(agent_id)
     
     if agent_id == "ddf09cedfcbd4d188adc528461a91392":  # AI问答智能体
         return []
-    elif agent_id == "ac32fe9431b1444f8ac3cdf42901024e":  # 网页总结
-        return [
-            ChatMessage(role="system", content=system_prompt),
-            ChatMessage(role="user", content=question),
-        ]
-    elif agent_id == "205a099ade6a4c4fb454e11f96ee6a18":  # 公文批示总结
-        return [
-            ChatMessage(role="system", content=system_prompt),
-            ChatMessage(role="user", content=question),
-        ]
-    else:  # 文本润色、文本稽核等有固定 system + user 格式
+    else:  # 其他内置智能体（网页总结、文本润色、文本稽核、公文批示总结）
         return [
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=question),
@@ -308,8 +309,8 @@ async def unified_agent(request: AgentRequest):
     if not agent_id:
         raise HTTPException(status_code=400, detail="缺少 agent_id 参数")
 
-    if agent_id not in AGENT_SYSTEM_PROMPTS:
-        raise HTTPException(status_code=400, detail=f"未知智能体ID: {agent_id}")
+    # 判断是否为自定义智能体（不在内置列表中）
+    is_custom_agent = agent_id not in AGENT_SYSTEM_PROMPTS
 
     # 获取用户问题
     question = request.question
@@ -407,8 +408,8 @@ async def unified_agent(request: AgentRequest):
             },
         )
 
-    else:  # 其他智能体（网页总结、文本润色、文本稽核、公文批示总结）
-        # 构建消息列表
+    else:  # 其他智能体（网页总结、文本润色、文本稽核、公文批示总结、自定义智能体）
+        # 构建消息列表（自定义智能体直接传用户消息）
         messages = _build_messages_for_agent(agent_id, question)
 
         # 构建内部使用的 ChatRequest

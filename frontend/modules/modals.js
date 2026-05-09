@@ -29,6 +29,15 @@ async function showAgentSelectionModal() {
     closeBtn.onclick = closeAgentSelectionModal;
   }
 
+  // 新增智能体按钮
+  const addAgentBtn = document.getElementById('ai-agent-modal-add-btn');
+  if (addAgentBtn) {
+    addAgentBtn.onclick = () => {
+      closeAgentSelectionModal();
+      openAddAgentModal();
+    };
+  }
+
   modal.onclick = (e) => {
     if (e.target === modal) {
       closeAgentSelectionModal();
@@ -71,14 +80,44 @@ async function renderCustomAgentsInModal() {
         <div class="ai-agent-name">${agent.name}</div>
         <div class="ai-agent-desc">${agent.desc || ''}</div>
       </div>
+      <div class="ai-agent-actions">
+        <button class="ai-agent-edit-btn" data-agent-id="${agent.id}" title="编辑">✏️</button>
+        <button class="ai-agent-delete-btn" data-agent-id="${agent.id}" title="删除">🗑️</button>
+      </div>
     </div>
   `).join('');
   
+  // 绑定选择事件
   customAgentList.querySelectorAll('.ai-agent-item').forEach(item => {
-    item.onclick = () => {
+    item.onclick = (e) => {
+      // 如果点击的是编辑/删除按钮，不触发选择
+      if (e.target.closest('.ai-agent-actions')) return;
       const agentId = item.dataset.agent;
       selectAgentAndCreateSession(agentId);
       closeAgentSelectionModal();
+    };
+  });
+  
+  // 绑定编辑事件
+  customAgentList.querySelectorAll('.ai-agent-edit-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const agentId = btn.dataset.agentId;
+      openEditAgentModal(agentId);
+    };
+  });
+  
+  // 绑定删除事件
+  customAgentList.querySelectorAll('.ai-agent-delete-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const agentId = btn.dataset.agentId;
+      const agent = CustomAgentManager.getAgentById(agentId);
+      if (agent && confirm(`确定要删除智能体「${agent.name}」吗？`)) {
+        await CustomAgentManager.remove(agentId);
+        await renderCustomAgentsInModal();
+        showToast(`智能体「${agent.name}」已删除`);
+      }
     };
   });
 }
@@ -120,6 +159,48 @@ function openAddAgentModal() {
   document.getElementById('ai-add-agent-desc').value = '';
   document.getElementById('ai-add-agent-verify-status').textContent = '';
   document.getElementById('ai-add-agent-verify-status').className = 'ai-add-agent-verify-status';
+  
+  // 重置为新增模式
+  delete modal.dataset.editingId;
+  const titleEl = modal.querySelector('.ai-add-agent-modal-header span:first-child');
+  if (titleEl) titleEl.textContent = '新增智能体';
+  const verifyBtn = document.getElementById('ai-add-agent-verify-btn');
+  if (verifyBtn) verifyBtn.textContent = '✅ 验证并保存';
+  
+  // 启用ID输入（新增时可编辑）
+  document.getElementById('ai-add-agent-id').disabled = false;
+
+  modal.style.display = 'flex';
+}
+
+/**
+ * 打开编辑智能体弹窗
+ * @param {string} agentId - 智能体ID
+ */
+function openEditAgentModal(agentId) {
+  const agent = CustomAgentManager.getAgentById(agentId);
+  if (!agent) return;
+
+  const modal = document.getElementById('ai-add-agent-modal');
+  if (!modal) return;
+
+  document.getElementById('ai-add-agent-name').value = agent.name || '';
+  document.getElementById('ai-add-agent-id').value = agent.id || '';
+  document.getElementById('ai-add-agent-key').value = agent.key || '';
+  document.getElementById('ai-add-agent-icon').value = agent.icon || '🤖';
+  document.getElementById('ai-add-agent-desc').value = agent.desc || '';
+  document.getElementById('ai-add-agent-verify-status').textContent = '';
+  document.getElementById('ai-add-agent-verify-status').className = 'ai-add-agent-verify-status';
+  
+  // 设置为编辑模式
+  modal.dataset.editingId = agentId;
+  const titleEl = modal.querySelector('.ai-add-agent-modal-header span:first-child');
+  if (titleEl) titleEl.textContent = '编辑智能体';
+  const verifyBtn = document.getElementById('ai-add-agent-verify-btn');
+  if (verifyBtn) verifyBtn.textContent = '✅ 验证并更新';
+  
+  // 禁用ID输入（编辑时不可修改ID）
+  document.getElementById('ai-add-agent-id').disabled = true;
 
   modal.style.display = 'flex';
 }
@@ -135,9 +216,12 @@ function closeAddAgentModal() {
 }
 
 /**
- * 处理新增智能体验证
+ * 处理新增/编辑智能体验证
  */
 async function handleAddAgentVerify() {
+  const modal = document.getElementById('ai-add-agent-modal');
+  const isEditing = modal.dataset.editingId;
+  
   const name = document.getElementById('ai-add-agent-name').value.trim();
   const agentId = document.getElementById('ai-add-agent-id').value.trim();
   const agentKey = document.getElementById('ai-add-agent-key').value.trim();
@@ -162,7 +246,8 @@ async function handleAddAgentVerify() {
     return;
   }
 
-  if (CustomAgentManager.getAgentById(agentId)) {
+  // 新增模式下检查ID是否已存在
+  if (!isEditing && CustomAgentManager.getAgentById(agentId)) {
     statusEl.textContent = '该智能体ID已存在';
     statusEl.className = 'ai-add-agent-verify-status error';
     return;
@@ -176,25 +261,42 @@ async function handleAddAgentVerify() {
   const result = await verifyAgent(agentId, agentKey);
 
   verifyBtn.disabled = false;
-  verifyBtn.textContent = '✅ 验证并保存';
+  verifyBtn.textContent = isEditing ? '✅ 验证并更新' : '✅ 验证并保存';
 
   if (result.success) {
     statusEl.textContent = result.message;
     statusEl.className = 'ai-add-agent-verify-status success';
 
-    await CustomAgentManager.add({
-      id: agentId,
-      name: name,
-      key: agentKey,
-      icon: icon,
-      desc: desc,
-      createdAt: Date.now(),
-    });
-
-    setTimeout(() => {
-      closeAddAgentModal();
-      showToast(`智能体「${name}」已添加`);
-    }, 800);
+    if (isEditing) {
+      // 编辑模式：删除旧的再添加新的
+      await CustomAgentManager.remove(isEditing);
+      await CustomAgentManager.add({
+        id: agentId,
+        name: name,
+        key: agentKey,
+        icon: icon,
+        desc: desc,
+        createdAt: Date.now(),
+      });
+      setTimeout(() => {
+        closeAddAgentModal();
+        showToast(`智能体「${name}」已更新`);
+      }, 800);
+    } else {
+      // 新增模式
+      await CustomAgentManager.add({
+        id: agentId,
+        name: name,
+        key: agentKey,
+        icon: icon,
+        desc: desc,
+        createdAt: Date.now(),
+      });
+      setTimeout(() => {
+        closeAddAgentModal();
+        showToast(`智能体「${name}」已添加`);
+      }, 800);
+    }
   } else {
     statusEl.textContent = result.message;
     statusEl.className = 'ai-add-agent-verify-status error';

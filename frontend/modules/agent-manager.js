@@ -169,11 +169,19 @@ async function verifyAgent(agentId, agentKey) {
       return { success: false, message: '验证失败：智能体ID不存在' };
     }
 
+    if (response.status === 400) {
+      return { success: false, message: '验证失败：请求参数错误' };
+    }
+
+    if (response.status === 503) {
+      return { success: false, message: '验证失败：后端服务未就绪' };
+    }
+
     if (response.ok || response.status === 200) {
       return { success: true, message: '验证成功' };
     }
 
-    return { success: true, message: `服务已响应（状态码: ${response.status}），智能体可能可用` };
+    return { success: false, message: `验证失败：服务返回状态码 ${response.status}` };
   } catch (e) {
     if (e.name === 'AbortError') {
       return { success: false, message: '验证超时，请检查网络连接' };
