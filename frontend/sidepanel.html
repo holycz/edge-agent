@@ -115,59 +115,6 @@
     </div>
   </div>
 
-  <!-- 预设提示词管理面板 -->
-  <div class="ai-prompt-panel" id="ai-prompt-panel" style="display: none;">
-    <div class="ai-prompt-panel-header">
-      <span>📋 预设提示词</span>
-      <span class="ai-prompt-panel-close">×</span>
-    </div>
-    <div class="ai-prompt-panel-content">
-      <div class="ai-prompt-panel-section">
-        <h4>内置提示词</h4>
-        <div class="ai-prompt-list" id="ai-built-in-prompts">
-          <!-- 内置提示词 -->
-        </div>
-      </div>
-      <div class="ai-prompt-panel-section">
-        <div class="ai-prompt-section-header">
-          <h4>我的提示词</h4>
-          <button class="ai-add-prompt-btn" id="ai-add-prompt-btn">➕ 添加</button>
-        </div>
-        <div class="ai-prompt-list" id="ai-custom-prompts">
-          <!-- 自定义提示词 -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 添加/编辑提示词弹窗 -->
-  <div class="ai-prompt-modal" id="ai-prompt-modal" style="display: none;">
-    <div class="ai-prompt-modal-content">
-      <div class="ai-prompt-modal-header">
-        <span id="ai-prompt-modal-title">添加提示词</span>
-        <span class="ai-prompt-modal-close">×</span>
-      </div>
-      <div class="ai-prompt-modal-body">
-        <div class="ai-prompt-form-item">
-          <label>标题</label>
-          <input type="text" id="ai-prompt-form-title" placeholder="提示词名称，如：代码解释">
-        </div>
-        <div class="ai-prompt-form-item">
-          <label>图标（可选）</label>
-          <input type="text" id="ai-prompt-form-icon" placeholder="emoji，如：💻" maxlength="2">
-        </div>
-        <div class="ai-prompt-form-item">
-          <label>提示词内容</label>
-          <textarea id="ai-prompt-form-content" rows="6" placeholder="输入提示词模板..."></textarea>
-        </div>
-      </div>
-      <div class="ai-prompt-modal-footer">
-        <button class="ai-prompt-modal-cancel">取消</button>
-        <button class="ai-prompt-modal-save">保存</button>
-      </div>
-    </div>
-  </div>
-
   <!-- 设置面板 -->
   <div class="ai-config-panel" id="ai-config-panel" style="display: none;">
     <div class="ai-config-header">
@@ -343,42 +290,6 @@
     </div>
   </div>
 
-  <!-- 快捷键帮助面板 -->
-  <div class="ai-shortcut-help-overlay" id="ai-shortcut-help-overlay">
-    <div class="ai-shortcut-help-panel">
-      <div class="ai-shortcut-help-header">
-        <span class="ai-shortcut-help-title">⌨️ 快捷键</span>
-        <span class="ai-shortcut-help-close" id="ai-shortcut-help-close">✕</span>
-      </div>
-      <div class="ai-shortcut-help-list">
-        <div class="ai-shortcut-item">
-          <span class="ai-shortcut-label">搜索对话历史</span>
-          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Ctrl</span><span class="ai-shortcut-key">K</span></div>
-        </div>
-        <div class="ai-shortcut-item">
-          <span class="ai-shortcut-label">新建对话</span>
-          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Ctrl</span><span class="ai-shortcut-key">N</span></div>
-        </div>
-        <div class="ai-shortcut-item">
-          <span class="ai-shortcut-label">切换会话列表</span>
-          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Ctrl</span><span class="ai-shortcut-key">B</span></div>
-        </div>
-        <div class="ai-shortcut-item">
-          <span class="ai-shortcut-label">发送消息</span>
-          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Enter</span></div>
-        </div>
-        <div class="ai-shortcut-item">
-          <span class="ai-shortcut-label">换行</span>
-          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Shift</span><span class="ai-shortcut-key">Enter</span></div>
-        </div>
-        <div class="ai-shortcut-item">
-          <span class="ai-shortcut-label">显示快捷键帮助</span>
-          <div class="ai-shortcut-keys"><span class="ai-shortcut-key">Ctrl</span><span class="ai-shortcut-key">/</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script src="lib/marked.min.js"></script>
   <script src="lib/highlight.core.min.js"></script>
   <!-- 全局变量和常量（必须最先加载） -->
@@ -389,7 +300,6 @@
   <script src="modules/agent-manager.js"></script>
   <script src="modules/storage.js"></script>
   <script src="modules/session.js"></script>
-  <script src="modules/prompt.js"></script>
   <script src="modules/ui.js"></script>
   <script src="modules/stream.js"></script>
   <script src="modules/file-upload.js"></script>

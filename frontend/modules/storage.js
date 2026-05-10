@@ -1,6 +1,6 @@
 /**
  * 存储管理模块
- * 负责与 chrome.storage 交互，管理会话和提示词数据的持久化
+ * 负责与 chrome.storage 交互，管理会话数据的持久化
  * @module storage
  */
 
@@ -39,40 +39,11 @@ const StorageManager = {
   },
 
   /**
-   * 加载提示词模板
-   * @returns {Promise<Array>} 提示词模板列表
-   */
-  async loadPromptTemplates() {
-    try {
-      const data = await chrome.storage.local.get(['promptTemplates']);
-      promptTemplates = data.promptTemplates || [];
-      console.log('[Storage] 加载提示词模板:', promptTemplates.length);
-      return promptTemplates;
-    } catch (e) {
-      console.error('[Storage] 加载提示词模板失败:', e);
-      promptTemplates = [];
-      return [];
-    }
-  },
-
-  /**
-   * 保存提示词模板
-   */
-  async savePromptTemplates() {
-    try {
-      await chrome.storage.local.set({ promptTemplates });
-      console.log('[Storage] 保存提示词模板成功:', promptTemplates.length);
-    } catch (e) {
-      console.error('[Storage] 保存提示词模板失败:', e);
-    }
-  },
-
-  /**
    * 导出所有数据
    * @returns {Promise<string>} JSON字符串
    */
   async exportData() {
-    const data = await chrome.storage.local.get(['sessions', 'promptTemplates']);
+    const data = await chrome.storage.local.get(['sessions']);
     return JSON.stringify(data, null, 2);
   },
 
@@ -85,9 +56,7 @@ const StorageManager = {
     try {
       const data = JSON.parse(jsonString);
       if (data.sessions) await chrome.storage.local.set({ sessions: data.sessions });
-      if (data.promptTemplates) await chrome.storage.local.set({ promptTemplates: data.promptTemplates });
       await this.loadSessions();
-      await this.loadPromptTemplates();
       return true;
     } catch (e) {
       console.error('[Storage] 导入数据失败:', e);
@@ -101,10 +70,9 @@ const StorageManager = {
    */
   async clearAllData() {
     try {
-      await chrome.storage.local.remove(['sessions', 'currentSessionId', 'promptTemplates']);
+      await chrome.storage.local.remove(['sessions', 'currentSessionId']);
       sessions = [];
       currentSessionId = null;
-      promptTemplates = [];
       console.log('[Storage] 已清空所有数据');
       return true;
     } catch (e) {

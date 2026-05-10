@@ -90,13 +90,6 @@ function bindSearchEvents() {
  * 处理搜索快捷键
  */
 function handleSearchKeydown(e) {
-  // Ctrl/Cmd + K 聚焦搜索框
-  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-    e.preventDefault();
-    focusSearchInput();
-    return;
-  }
-
   // ESC 关闭搜索结果或清空搜索
   if (e.key === 'Escape' && searchResultsPanel.style.display === 'block') {
     clearSearch();

@@ -64,7 +64,6 @@ async function init() {
     initMarkdownParser();
     setupEventListeners();
     setupSessionPanelListeners();
-    setupPromptPanelListeners();
     setupModalEventListeners();
     
     // 初始化搜索模块
@@ -74,10 +73,8 @@ async function init() {
 
     // 加载数据
     await StorageManager.loadSessions();
-    await StorageManager.loadPromptTemplates();
     await CustomAgentManager.load();
     renderSessionList();
-    renderQuickPrompts();
 
     // 恢复当前会话
     if (currentSessionId) {
@@ -112,9 +109,6 @@ async function init() {
     // 初始化后端状态检查
     updateBackendStatus();
     setInterval(updateBackendStatus, 60000);
-
-    // 初始化快捷键帮助
-    initShortcutHelp();
 
     chrome.storage.onChanged.addListener(handleStorageChange);
   } catch (e) {
@@ -266,28 +260,6 @@ function setupSessionPanelListeners() {
       if (sidebar) {
         sidebar.classList.toggle('collapsed');
       }
-    });
-  }
-}
-
-/**
- * 设置提示词面板事件监听器
- */
-function setupPromptPanelListeners() {
-  const promptPanel = document.getElementById('ai-prompt-panel');
-  if (!promptPanel) return;
-
-  const closeBtn = promptPanel.querySelector('.ai-prompt-panel-close');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      promptPanel.style.display = 'none';
-    });
-  }
-
-  const addPromptBtn = document.getElementById('ai-add-prompt-btn');
-  if (addPromptBtn) {
-    addPromptBtn.addEventListener('click', () => {
-      openPromptModal();
     });
   }
 }
@@ -541,26 +513,6 @@ function setupModalEventListeners() {
     });
   }
 
-  // 提示词编辑弹窗
-  const promptModal = document.getElementById('ai-prompt-modal');
-  if (promptModal) {
-    const closeBtn = promptModal.querySelector('.ai-prompt-modal-close');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', closePromptModal);
-    }
-    const cancelBtn = promptModal.querySelector('.ai-prompt-modal-cancel');
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', closePromptModal);
-    }
-    const saveBtn = promptModal.querySelector('.ai-prompt-modal-save');
-    if (saveBtn) {
-      saveBtn.addEventListener('click', savePrompt);
-    }
-    promptModal.addEventListener('click', (e) => {
-      if (e.target === promptModal) closePromptModal();
-    });
-  }
-
   // 数据管理按钮
   const exportBtn = document.getElementById('ai-export-sessions');
   if (exportBtn) {
@@ -631,151 +583,6 @@ async function sendMessage() {
 }
 
 /**
- * 打开提示词编辑弹窗
- * @param {string|null} promptId - 提示词ID（编辑模式）
- */
-function openPromptModal(promptId = null) {
-  const modal = document.getElementById('ai-prompt-modal');
-  if (!modal) return;
-
-  const titleEl = document.getElementById('ai-prompt-modal-title');
-  const titleInput = document.getElementById('ai-prompt-form-title');
-  const iconInput = document.getElementById('ai-prompt-form-icon');
-  const contentInput = document.getElementById('ai-prompt-form-content');
-
-  if (promptId) {
-    const prompt = PromptManager.getPromptById(promptId);
-    if (prompt && !prompt.isBuiltIn) {
-      titleEl.textContent = '编辑提示词';
-      titleInput.value = prompt.title;
-      iconInput.value = prompt.icon || '';
-      contentInput.value = prompt.content;
-      modal.dataset.editingId = promptId;
-    }
-  } else {
-    titleEl.textContent = '添加提示词';
-    titleInput.value = '';
-    iconInput.value = '';
-    contentInput.value = '';
-    delete modal.dataset.editingId;
-  }
-
-  modal.style.display = 'flex';
-}
-
-/**
- * 关闭提示词编辑弹窗
- */
-function closePromptModal() {
-  const modal = document.getElementById('ai-prompt-modal');
-  if (modal) {
-    modal.style.display = 'none';
-  }
-}
-
-/**
- * 保存提示词
- */
-function savePrompt() {
-  const modal = document.getElementById('ai-prompt-modal');
-  const title = document.getElementById('ai-prompt-form-title').value.trim();
-  const icon = document.getElementById('ai-prompt-form-icon').value.trim();
-  const content = document.getElementById('ai-prompt-form-content').value.trim();
-
-  if (!title || !content) {
-    showToast('请填写标题和内容');
-    return;
-  }
-
-  const editingId = modal.dataset.editingId;
-  if (editingId) {
-    PromptManager.updatePrompt(editingId, title, content, icon);
-    showToast('提示词已更新');
-  } else {
-    PromptManager.createCustomPrompt(title, content, icon);
-    showToast('提示词已添加');
-  }
-
-  closePromptModal();
-  renderQuickPrompts();
-}
-
-/**
- * 渲染快速提示词列表
- */
-function renderQuickPrompts() {
-  const builtInList = document.getElementById('ai-built-in-prompts');
-  const customList = document.getElementById('ai-custom-prompts');
-
-  if (builtInList) {
-    builtInList.innerHTML = BUILT_IN_PROMPTS.map(prompt => `
-      <div class="ai-prompt-item" data-id="${prompt.id}">
-        <span class="ai-prompt-icon">${prompt.icon}</span>
-        <span class="ai-prompt-title">${prompt.title}</span>
-      </div>
-    `).join('');
-
-    builtInList.querySelectorAll('.ai-prompt-item').forEach(item => {
-      item.addEventListener('click', () => {
-        applyPrompt(item.dataset.id);
-      });
-    });
-  }
-
-  if (customList) {
-    customList.innerHTML = promptTemplates.map(prompt => `
-      <div class="ai-prompt-item" data-id="${prompt.id}">
-        <span class="ai-prompt-icon">${prompt.icon || '💬'}</span>
-        <span class="ai-prompt-title">${prompt.title}</span>
-        <div class="ai-prompt-actions">
-          <button class="ai-prompt-edit" data-id="${prompt.id}">✏️</button>
-          <button class="ai-prompt-delete" data-id="${prompt.id}">🗑️</button>
-        </div>
-      </div>
-    `).join('');
-
-    customList.querySelectorAll('.ai-prompt-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        if (!e.target.classList.contains('ai-prompt-edit') && !e.target.classList.contains('ai-prompt-delete')) {
-          applyPrompt(item.dataset.id);
-        }
-      });
-    });
-
-    customList.querySelectorAll('.ai-prompt-edit').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openPromptModal(btn.dataset.id);
-      });
-    });
-
-    customList.querySelectorAll('.ai-prompt-delete').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (confirm('确定要删除这个提示词吗？')) {
-          PromptManager.deletePrompt(btn.dataset.id);
-          renderQuickPrompts();
-          showToast('提示词已删除');
-        }
-      });
-    });
-  }
-}
-
-/**
- * 应用提示词
- * @param {string} promptId - 提示词ID
- */
-function applyPrompt(promptId) {
-  const content = PromptManager.applyPrompt(promptId);
-  if (content) {
-    inputTextarea.value = content;
-    inputTextarea.focus();
-    document.getElementById('ai-prompt-panel').style.display = 'none';
-  }
-}
-
-/**
  * 导出会话数据
  */
 async function exportSessions() {
@@ -830,11 +637,9 @@ async function clearAllData() {
     sessions = [];
     currentSessionId = null;
     conversationHistory = [];
-    promptTemplates = [];
     SessionManager.createSession('新会话', AGENT_IDS.CHAT);
     messagesContainer.innerHTML = '';
     renderSessionList();
-    renderQuickPrompts();
     showToast('已清空所有数据');
   }
 }
@@ -866,60 +671,6 @@ async function updateBackendStatus() {
   }
 }
 
-// ========== 快捷键帮助 ==========
-
-/**
- * 初始化快捷键帮助面板
- */
-function initShortcutHelp() {
-  const overlay = document.getElementById('ai-shortcut-help-overlay');
-  const closeBtn = document.getElementById('ai-shortcut-help-close');
-  if (!overlay) return;
-
-  // 关闭按钮
-  closeBtn.addEventListener('click', () => {
-    overlay.classList.remove('visible');
-  });
-
-  // 点击遮罩关闭
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      overlay.classList.remove('visible');
-    }
-  });
-
-  // 全局快捷键
-  document.addEventListener('keydown', (e) => {
-    const isInputFocused = document.activeElement &&
-      (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
-
-    // Ctrl+/ 显示快捷键帮助
-    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-      e.preventDefault();
-      overlay.classList.toggle('visible');
-      return;
-    }
-
-    // 以下快捷键仅在非输入框时生效
-    if (isInputFocused) return;
-
-    // Ctrl+N 新建对话
-    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-      e.preventDefault();
-      clearMessages();
-      return;
-    }
-
-    // Ctrl+B 切换侧边栏
-    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-      e.preventDefault();
-      const sidebar = document.getElementById('ai-sidebar-left');
-      if (sidebar) sidebar.classList.toggle('collapsed');
-      return;
-    }
-  });
-}
-
 // ========== 清空对话历史 ==========
 
 /**
@@ -945,7 +696,6 @@ async function handleClearHistory() {
   messagesContainer.innerHTML = '';
   conversationHistory = [];
   clearFileUploadState();
-  renderQuickPrompts();
 
   showToast('对话历史已清空');
 

@@ -56,7 +56,6 @@ let configPanel = null;
 let sessions = [];
 let currentSessionId = null;
 let conversationHistory = [];
-let promptTemplates = [];
 let isProcessingPending = false;
 
 // ========== 流式请求状态 ==========
