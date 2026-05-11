@@ -466,12 +466,10 @@ function setupEventListeners() {
 
   // 配置保存按钮
   document.querySelector('.ai-config-save').addEventListener('click', async () => {
-    const maxHistoryRoundsInput = parseInt(document.getElementById('ai-max-history-rounds').value);
     const myName = document.getElementById('ai-my-name').value.trim();
     const otherInfo = document.getElementById('ai-other-info').value.trim();
 
     const newConfig = {
-      maxHistoryRounds: maxHistoryRoundsInput >= 1 && maxHistoryRoundsInput <= 20 ? maxHistoryRoundsInput : DEFAULT_CONFIG.maxHistoryRounds,
       myName: myName,
       otherInfo: otherInfo,
     };

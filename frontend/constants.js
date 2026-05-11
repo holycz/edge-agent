@@ -78,7 +78,6 @@ const STREAM_CONTENT_TYPES = {
 // ========== 默认配置 ==========
 const DEFAULT_CONFIG = {
   useContext: true,
-  maxHistoryRounds: 5,
   myName: '',
   otherInfo: '',
 };

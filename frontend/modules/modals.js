@@ -395,11 +395,6 @@ function closeConfigPanel() {
  * 刷新配置面板
  */
 function refreshConfigPanel() {
-  const maxHistoryRoundsEl = document.getElementById('ai-max-history-rounds');
-  if (maxHistoryRoundsEl) {
-    maxHistoryRoundsEl.value = config.maxHistoryRounds || DEFAULT_CONFIG.maxHistoryRounds;
-  }
-
   const myNameEl = document.getElementById('ai-my-name');
   if (myNameEl) {
     myNameEl.value = config.myName || '';

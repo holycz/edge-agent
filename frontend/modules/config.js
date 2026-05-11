@@ -7,7 +7,6 @@
 // ========== 默认配置 ==========
 const DEFAULT_CONFIG = {
   useContext: true,
-  maxHistoryRounds: 5,
   contextLength: 20000,
   maxTotalChars: 100000,
   myName: '',
@@ -25,7 +24,7 @@ async function loadConfig() {
   try {
     const stored = await chrome.storage.sync.get([
       'useContext', 'contextLength',
-      'maxTotalChars', 'maxHistoryRounds', 'myName', 'otherInfo'
+      'maxTotalChars', 'myName', 'otherInfo'
     ]);
 
     config = {
@@ -33,7 +32,6 @@ async function loadConfig() {
       useContext: stored.useContext ?? DEFAULT_CONFIG.useContext,
       contextLength: stored.contextLength ?? DEFAULT_CONFIG.contextLength,
       maxTotalChars: stored.maxTotalChars ?? DEFAULT_CONFIG.maxTotalChars,
-      maxHistoryRounds: stored.maxHistoryRounds ?? DEFAULT_CONFIG.maxHistoryRounds,
       myName: stored.myName ?? DEFAULT_CONFIG.myName,
       otherInfo: stored.otherInfo ?? DEFAULT_CONFIG.otherInfo,
     };
