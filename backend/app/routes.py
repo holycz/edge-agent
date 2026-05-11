@@ -6,10 +6,10 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header
 from fastapi.responses import StreamingResponse, JSONResponse
 
-from app.ai_client import stream_chat
+from app.ai_client import stream_chat, chat_once
 from app.config import get_env
 from app.dialog_manager import dialog_manager
 from app.schemas import ChatRequest, AgentRequest, ChatMessage
@@ -521,6 +521,194 @@ async def upload_files(
         logger.error(f"[FileUpload] 失败: {str(e)}")
         return JSONResponse(
             content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
+            status_code=500,
+        )
+
+
+# ========== 智云平台接口模拟 ==========
+
+# 支持的场景端点配置
+SCENE_GATEWAY_ENDPOINTS = {
+    "fe49c25aba4a4b23b5a9c679286a68e5": {
+        "name": "直播话术修复",
+        "auth_token": "950fcd3e9e7d4f4ba344158fb854ddc8",
+        "system_prompt": """你是一位专业的直播话术编辑专家。请对用户提供的直播话术文本进行修复和优化，要求：
+1. 修正语法错误和错别字
+2. 优化表达，使话术更流畅、更有感染力
+3. 保持原意不变
+4. 适合直播场景的口语化表达
+
+请输出修复后的完整话术。""",
+    },
+    "90ca11ab78074e61abc3c0ab8f7f4483": {
+        "name": "卖点提取",
+        "auth_token": "5a0506aee0df4dbe8375a76f1fe420ee",
+        "system_prompt": """你是一位专业的产品分析师。请从用户提供的内容中提取关键卖点，要求：
+1. 提取核心卖点，每个卖点用简洁的语言概括
+2. 按重要性排序
+3. 突出产品/服务的独特优势
+4. 使用清晰的格式输出
+
+请输出提取的卖点列表。""",
+    },
+}
+
+
+@router.post("/sxzypt/scene_gateway/{endpoint_id}")
+async def scene_gateway(
+    endpoint_id: str,
+    keyword: str = Form(...),
+    requestId: str = Form(...),
+    input_file: Optional[UploadFile] = File(None),
+    AuthToken: Optional[str] = Header(None),
+):
+    """智云平台接口模拟 - 非流式接口
+    
+    模拟智云平台的工具流接口，接收 keyword 作为输入，调用大模型后返回结果。
+    
+    请求格式：multipart/form-data
+    - keyword: 输入内容（必填）
+    - requestId: 请求ID，格式：时间戳(13位) + 6位随机数（必填）
+    - input_file: 上传的文件（可选）
+    
+    请求头：
+    - AuthToken: 认证令牌
+    
+    响应格式：JSON
+    {
+        "errMsg": "success",
+        "errCode": 0,
+        "requestId": "xxx",
+        "id": "xxx",
+        "data": {
+            "code": 200,
+            "data": "AI生成的内容",
+            "num": 100,
+            "status": "success",
+            "msg": "",
+            "sendMessage": {}
+        }
+    }
+    """
+    # 验证端点是否存在
+    endpoint_config = SCENE_GATEWAY_ENDPOINTS.get(endpoint_id)
+    if not endpoint_config:
+        return JSONResponse(
+            content={
+                "errMsg": "endpoint not found",
+                "errCode": 404,
+                "requestId": requestId,
+                "id": "",
+                "data": {
+                    "code": 404,
+                    "data": "",
+                    "num": 0,
+                    "status": "error",
+                    "msg": f"未知的端点ID: {endpoint_id}",
+                    "sendMessage": {},
+                },
+            },
+            status_code=404,
+        )
+
+    # 验证 AuthToken
+    expected_token = endpoint_config.get("auth_token")
+    if expected_token and AuthToken != expected_token:
+        logger.warning(f"[SceneGateway] AuthToken 验证失败: expected={expected_token}, got={AuthToken}")
+        return JSONResponse(
+            content={
+                "errMsg": "authentication failed",
+                "errCode": 401,
+                "requestId": requestId,
+                "id": "",
+                "data": {
+                    "code": 401,
+                    "data": "",
+                    "num": 0,
+                    "status": "error",
+                    "msg": "AuthToken 验证失败",
+                    "sendMessage": {},
+                },
+            },
+            status_code=401,
+        )
+
+    # 读取文件内容（如果有）
+    file_content = ""
+    if input_file:
+        try:
+            file_bytes = await input_file.read()
+            # 尝试解码为文本
+            try:
+                file_content = file_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    file_content = file_bytes.decode("gbk")
+                except UnicodeDecodeError:
+                    file_content = file_bytes.decode("latin-1")
+            logger.info(f"[SceneGateway] 读取文件: {input_file.filename}, 长度: {len(file_content)}")
+        except Exception as e:
+            logger.error(f"[SceneGateway] 读取文件失败: {str(e)}")
+
+    # 构建完整的输入内容
+    full_input = keyword
+    if file_content:
+        full_input = f"{keyword}\n\n附件内容：\n{file_content}"
+
+    # 构建消息列表
+    system_prompt = endpoint_config.get("system_prompt", "")
+    messages = []
+    if system_prompt:
+        messages.append(ChatMessage(role="system", content=system_prompt))
+    messages.append(ChatMessage(role="user", content=full_input))
+
+    # 生成会话ID
+    session_id = f"{requestId[:13]}{requestId[13:]}" if len(requestId) >= 13 else requestId
+
+    try:
+        # 调用大模型（非流式）
+        logger.info(f"[SceneGateway] 开始调用大模型，端点: {endpoint_id}, keyword长度: {len(keyword)}")
+        ai_response = await chat_once(messages)
+        logger.info(f"[SceneGateway] 大模型调用完成，响应长度: {len(ai_response)}")
+
+        # 返回响应
+        return JSONResponse(
+            content={
+                "errMsg": "success",
+                "errCode": 0,
+                "requestId": requestId,
+                "id": session_id,
+                "data": {
+                    "code": 200,
+                    "data": ai_response,
+                    "num": len(ai_response),
+                    "status": "success",
+                    "msg": "",
+                    "sendMessage": {
+                        "inprompt_llm": keyword[:50] + "..." if len(keyword) > 50 else keyword,
+                    },
+                },
+            },
+            status_code=200,
+        )
+
+    except Exception as e:
+        logger.error(f"[SceneGateway] 大模型调用失败: {str(e)}")
+        return JSONResponse(
+            content={
+                "errMsg": "internal error",
+                "errCode": 500,
+                "requestId": requestId,
+                "id": session_id,
+                "data": {
+                    "code": 500,
+                    "data": "",
+                    "num": 0,
+                    "status": "error",
+                    "msg": f"大模型调用失败: {str(e)}",
+                    "sendMessage": {},
+                },
+            },
             status_code=500,
         )
 

@@ -74,6 +74,7 @@ async function init() {
     // 加载数据
     await StorageManager.loadSessions();
     await CustomAgentManager.load();
+    await CustomWorkflowManager.load();
     renderSessionList();
 
     // 恢复当前会话
@@ -464,6 +465,21 @@ function setupEventListeners() {
     }
   }
 
+  // 新增工作流弹窗事件
+  const addWorkflowModal = document.getElementById('ai-add-workflow-modal');
+  if (addWorkflowModal) {
+    addWorkflowModal.querySelector('.ai-add-workflow-modal-close').addEventListener('click', closeAddWorkflowModal);
+    addWorkflowModal.querySelector('.ai-add-workflow-modal-cancel').addEventListener('click', closeAddWorkflowModal);
+    addWorkflowModal.addEventListener('click', (e) => {
+      if (e.target === addWorkflowModal) closeAddWorkflowModal();
+    });
+
+    const verifyBtn = document.getElementById('ai-add-workflow-verify-btn');
+    if (verifyBtn) {
+      verifyBtn.addEventListener('click', handleAddWorkflowVerify);
+    }
+  }
+
   // 配置保存按钮
   document.querySelector('.ai-config-save').addEventListener('click', async () => {
     const maxHistoryRoundsInput = parseInt(document.getElementById('ai-max-history-rounds').value);
@@ -573,6 +589,7 @@ async function sendMessage() {
   
   const isFirstMessage = currentSession && !currentSession.messages.some(m => m.role === 'assistant');
   
+  const dialogType = currentSession?.dialogType || 'agent';
   const agentId = currentSession?.agentType || AGENT_IDS.CHAT;
   const isQA = agentId === AGENT_IDS.CHAT;
   
@@ -589,10 +606,18 @@ async function sendMessage() {
     renderSessionList();
   }
 
-  await callAgent(agentId, pageContext?.content || "", isQA, {
-    ...pageContext?.metadata,
-    userQuestion: text
-  }, dialogId, false, !isFirstMessage);
+  // 根据对话类型调用不同的接口
+  if (dialogType === 'workflow') {
+    await callWorkflow(agentId, pageContext?.content || text, {
+      ...pageContext?.metadata,
+      userQuestion: text
+    }, dialogId, !isFirstMessage);
+  } else {
+    await callAgent(agentId, pageContext?.content || "", isQA, {
+      ...pageContext?.metadata,
+      userQuestion: text
+    }, dialogId, false, !isFirstMessage);
+  }
 
   clearFileUploadState();
 }

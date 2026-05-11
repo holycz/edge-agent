@@ -19,9 +19,10 @@ const SessionManager = {
    * 创建新会话
    * @param {string} title - 会话标题
    * @param {string} agentType - 智能体类型ID
+   * @param {string} dialogType - 对话类型：'agent'（智能体）或 'workflow'（工作流）
    * @returns {Object} 新创建的会话对象
    */
-  createSession(title = '新会话', agentType = AGENT_TYPES.CHAT) {
+  createSession(title = '新会话', agentType = AGENT_TYPES.CHAT, dialogType = 'agent') {
     const session = {
       id: this.generateId(),
       title: title.substring(0, 50),
@@ -31,13 +32,14 @@ const SessionManager = {
       pageContext: null,
       dialogId: generateDialogId(),
       agentType: agentType,
+      dialogType: dialogType, // 'agent' 或 'workflow'
     };
 
     sessions.unshift(session);
     currentSessionId = session.id;
     StorageManager.saveSessions();
 
-    console.log('[SessionManager] 创建新会话:', session.id, 'agentType:', agentType, 'dialogId:', session.dialogId);
+    console.log('[SessionManager] 创建新会话:', session.id, 'agentType:', agentType, 'dialogType:', dialogType, 'dialogId:', session.dialogId);
     return session;
   },
 
@@ -64,6 +66,30 @@ const SessionManager = {
   getSessionAgentType(sessionId = null) {
     const session = sessionId ? sessions.find(s => s.id === sessionId) : this.getCurrentSession();
     return session?.agentType || AGENT_TYPES.CHAT;
+  },
+
+  /**
+   * 获取会话的对话类型
+   * @param {string|null} sessionId - 会话ID（可选，默认当前会话）
+   * @returns {string} 对话类型：'agent' 或 'workflow'
+   */
+  getSessionDialogType(sessionId = null) {
+    const session = sessionId ? sessions.find(s => s.id === sessionId) : this.getCurrentSession();
+    return session?.dialogType || 'agent';
+  },
+
+  /**
+   * 设置会话的对话类型
+   * @param {string} sessionId - 会话ID
+   * @param {string} dialogType - 对话类型：'agent' 或 'workflow'
+   */
+  setSessionDialogType(sessionId, dialogType) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (session) {
+      session.dialogType = dialogType;
+      session.updatedAt = Date.now();
+      StorageManager.saveSessions();
+    }
   },
 
   /**

@@ -34,6 +34,7 @@ const MENU_IDS = {
 const API_ENDPOINTS = {
   AGENT: '/sxzypt/py_talkHub/agent/agent',
   UPLOAD: '/sxzypt/aistar_server/agent/upload',
+  WORKFLOW: '/sxzypt/scene_gateway', // 工作流端点前缀
 };
 
 // ========== 后端URL配置 ==========
@@ -395,7 +396,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
  */
 async function handleStreamRequest(msg, sender, sendResponse) {
   const sessionId = msg.sessionId || 'default';
-  console.log("[Background] 收到流式请求, sessionId:", sessionId);
+  const isWorkflow = msg.isWorkflow || false;
+  console.log("[Background] 收到流式请求, sessionId:", sessionId, "isWorkflow:", isWorkflow);
 
   const abortController = new AbortController();
   activeStreams.set(sessionId, abortController);
@@ -404,15 +406,40 @@ async function handleStreamRequest(msg, sender, sendResponse) {
     const backendUrl = await getBackendUrl();
     const endpoint = msg.endpoint || API_ENDPOINTS.AGENT;
 
-    const res = await fetch(`${backendUrl}${endpoint}`, {
+    let fetchOptions = {
       method: "POST",
-      headers: {
+      signal: abortController.signal
+    };
+
+    if (isWorkflow) {
+      // 工作流请求使用 multipart/form-data 格式
+      const bodyData = JSON.parse(msg.body);
+      const formData = new FormData();
+      formData.append("keyword", bodyData.keyword);
+      formData.append("requestId", bodyData.requestId);
+
+      // 如果有文件数据，添加到 FormData
+      if (bodyData.file) {
+        const fileData = bodyData.file.data;
+        const uint8Array = new Uint8Array(fileData);
+        const blob = new Blob([uint8Array], { type: bodyData.file.type });
+        formData.append("input_file", blob, bodyData.file.name);
+      }
+
+      fetchOptions.body = formData;
+      fetchOptions.headers = {
+        "AuthToken": bodyData.authToken || msg.authToken || ""
+      };
+    } else {
+      // 智能体请求使用 JSON 格式
+      fetchOptions.headers = {
         "Content-Type": "application/json",
         "AuthToken": msg.agentKey || "badb4c53652e4eb3990cff59db7a0381"
-      },
-      body: msg.body,
-      signal: abortController.signal
-    });
+      };
+      fetchOptions.body = msg.body;
+    }
+
+    const res = await fetch(`${backendUrl}${endpoint}`, fetchOptions);
 
     console.log("[Background] 后端响应状态:", res.status);
 
@@ -445,7 +472,7 @@ async function handleStreamRequest(msg, sender, sendResponse) {
     
     if (contentType.includes('application/json')) {
       // JSON响应：一次性读取并返回
-      await processJsonResponse(res, sessionId);
+      await processJsonResponse(res, sessionId, isWorkflow);
     } else {
       // 流式响应：使用SSE处理
       await processStreamResponse(res, sessionId, abortController);
@@ -475,41 +502,55 @@ async function handleStreamRequest(msg, sender, sendResponse) {
  * 处理JSON响应数据
  * @param {Response} res - HTTP响应对象
  * @param {string} sessionId - 会话ID
+ * @param {boolean} isWorkflow - 是否为工作流响应
  */
-async function processJsonResponse(res, sessionId) {
+async function processJsonResponse(res, sessionId, isWorkflow = false) {
   try {
     const jsonData = await res.json();
-    console.log("[Background] JSON响应:", jsonData);
+    console.log("[Background] JSON响应:", jsonData, "isWorkflow:", isWorkflow);
     
     // 尝试从不同格式的JSON中提取内容
     let content = '';
     
-    // 格式1: { "choices": [{ "message": { "content": "..." } }] }
-    if (jsonData.choices && jsonData.choices[0]?.message?.content) {
-      content = jsonData.choices[0].message.content;
+    if (isWorkflow) {
+      // 工作流响应格式: { "data": { "data": "AI生成的内容" } }
+      if (jsonData.data?.data) {
+        content = jsonData.data.data;
+      }
+      // 备用格式: { "data": "..." }
+      else if (jsonData.data && typeof jsonData.data === 'string') {
+        content = jsonData.data;
+      }
+    } else {
+      // 智能体响应格式
+      // 格式1: { "choices": [{ "message": { "content": "..." } }] }
+      if (jsonData.choices && jsonData.choices[0]?.message?.content) {
+        content = jsonData.choices[0].message.content;
+      }
+      // 格式2: { "data": { "content": "..." } }
+      else if (jsonData.data?.content) {
+        content = jsonData.data.content;
+      }
+      // 格式3: { "content": "..." }
+      else if (jsonData.content) {
+        content = jsonData.content;
+      }
+      // 格式4: { "answer": "..." }
+      else if (jsonData.answer) {
+        content = jsonData.answer;
+      }
+      // 格式5: { "result": "..." }
+      else if (jsonData.result) {
+        content = jsonData.result;
+      }
+      // 格式6: { "message": "..." }
+      else if (jsonData.message) {
+        content = jsonData.message;
+      }
     }
-    // 格式2: { "data": { "content": "..." } }
-    else if (jsonData.data?.content) {
-      content = jsonData.data.content;
-    }
-    // 格式3: { "content": "..." }
-    else if (jsonData.content) {
-      content = jsonData.content;
-    }
-    // 格式4: { "answer": "..." }
-    else if (jsonData.answer) {
-      content = jsonData.answer;
-    }
-    // 格式5: { "result": "..." }
-    else if (jsonData.result) {
-      content = jsonData.result;
-    }
-    // 格式6: { "message": "..." }
-    else if (jsonData.message) {
-      content = jsonData.message;
-    }
+    
     // 兜底：将整个JSON作为内容
-    else {
+    if (!content) {
       content = JSON.stringify(jsonData, null, 2);
     }
     

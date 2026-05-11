@@ -2,9 +2,9 @@ import httpx
 import json
 import os
 import logging
-from typing import Optional, Dict, Any, AsyncGenerator
+from typing import Optional, Dict, Any, AsyncGenerator, List
 from app.config import get_env
-from app.schemas import ChatRequest
+from app.schemas import ChatRequest, ChatMessage
 from app.models_config import get_model_config
 
 logger = logging.getLogger(__name__)
@@ -202,3 +202,86 @@ async def _parse_stream_response(
 
         except json.JSONDecodeError:
             continue
+
+
+async def chat_once(
+    messages: List[ChatMessage],
+    temperature: Optional[float] = None,
+) -> str:
+    """
+    非流式调用 AI API，一次性获取完整回复
+
+    Args:
+        messages: 对话消息列表
+        temperature: 温度参数，控制随机性
+
+    Returns:
+        AI 的完整回复文本
+
+    Raises:
+        Exception: 调用失败时抛出异常
+    """
+    model = get_env("MODEL")
+    api_url_raw = get_env("API_URL")
+    api_url = f"{api_url_raw.rstrip('/')}/chat/completions"
+
+    auth_header = _build_auth_header(get_env("API_KEY"))
+    config = get_model_config(model)
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": auth_header,
+    }
+
+    body = {
+        "model": model,
+        "messages": [{"role": m.role, "content": m.content} for m in messages],
+        "temperature": temperature if temperature is not None else config.temperature,
+        "stream": False,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+    proxy_url = _get_proxy_url()
+
+    logger.info(
+        f"Non-stream request to {api_url}: model={model}, "
+        f"messages_count={len(messages)}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=config.timeout, proxy=proxy_url) as client:
+            response = await client.post(api_url, headers=headers, json=body)
+
+            if response.status_code != 200:
+                error_text = response.text
+                error_message = f"HTTP {response.status_code}"
+                try:
+                    error_json = json.loads(error_text)
+                    if error_json.get("error", {}).get("message"):
+                        error_message = error_json["error"]["message"]
+                except Exception:
+                    pass
+                logger.error(f"API error: {error_message}, body: {error_text[:500]}")
+                raise Exception(f"AI API 调用失败: {error_message}")
+
+            result = response.json()
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            if not content:
+                raise Exception("AI API 返回空内容")
+
+            logger.info(f"Non-stream response received, length: {len(content)}")
+            return content
+
+    except httpx.ConnectError as e:
+        logger.error(f"Connection error to {api_url}: {e}")
+        raise Exception(f"无法连接 AI API ({api_url}): {str(e)}")
+    except httpx.TimeoutException:
+        logger.error(f"Timeout connecting to {api_url}")
+        raise Exception(f"连接 AI API 超时 ({api_url})")
+    except Exception as e:
+        if isinstance(e, Exception) and "AI API" in str(e):
+            raise
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        raise Exception(f"请求 AI API 异常: {str(e)}")
