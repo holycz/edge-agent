@@ -147,11 +147,26 @@ async function checkPendingQuestion() {
 
       if (action === 'ask') {
         if (selectedText) {
-          inputTextarea.value = `请回答关于这段文字的问题：\n\n「${selectedText}」\n\n`;
+          const currentSession = SessionManager.getCurrentSession();
+          const currentAgentType = currentSession?.agentType || AGENT_IDS.CHAT;
+          
+          if (currentAgentType !== AGENT_IDS.CHAT) {
+            messagesContainer.innerHTML = '';
+            conversationHistory = [];
+            SessionManager.createSession('AI问答', AGENT_IDS.CHAT);
+            renderSessionList();
+            updateHeaderTitle();
+            if (config.useContext) autoFetchPageContext();
+            showToast('已创建AI问学会话');
+          }
+          
+          const questionText = `请回答关于这段文字的问题：\n\n「${selectedText}」\n\n`;
+          inputTextarea.value = questionText;
           inputTextarea.focus();
           inputTextarea.style.height = 'auto';
           inputTextarea.style.height = Math.min(inputTextarea.scrollHeight, 120) + 'px';
-          inputTextarea.setSelectionRange(inputTextarea.value.length, inputTextarea.value.length);
+          
+          await sendMessage();
         }
       } else if (action === 'openPanel') {
         console.log("[Main] 仅打开侧边栏");
