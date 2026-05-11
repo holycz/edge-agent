@@ -395,11 +395,6 @@ function closeConfigPanel() {
  * 刷新配置面板
  */
 function refreshConfigPanel() {
-  const enableDoubleClickEl = document.getElementById('ai-enable-double-click');
-  if (enableDoubleClickEl) {
-    enableDoubleClickEl.checked = config.enableDoubleClick === true;
-  }
-
   const maxHistoryRoundsEl = document.getElementById('ai-max-history-rounds');
   if (maxHistoryRoundsEl) {
     maxHistoryRoundsEl.value = config.maxHistoryRounds || DEFAULT_CONFIG.maxHistoryRounds;

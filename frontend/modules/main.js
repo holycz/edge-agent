@@ -469,13 +469,11 @@ function setupEventListeners() {
     const maxHistoryRoundsInput = parseInt(document.getElementById('ai-max-history-rounds').value);
     const myName = document.getElementById('ai-my-name').value.trim();
     const otherInfo = document.getElementById('ai-other-info').value.trim();
-    const enableDoubleClick = document.getElementById('ai-enable-double-click').checked;
 
     const newConfig = {
       maxHistoryRounds: maxHistoryRoundsInput >= 1 && maxHistoryRoundsInput <= 20 ? maxHistoryRoundsInput : DEFAULT_CONFIG.maxHistoryRounds,
       myName: myName,
       otherInfo: otherInfo,
-      enableDoubleClick: enableDoubleClick,
     };
 
     if (await saveConfig(newConfig)) {

@@ -7,7 +7,6 @@
 // ========== 默认配置 ==========
 const DEFAULT_CONFIG = {
   useContext: true,
-  enableDoubleClick: false,
   maxHistoryRounds: 5,
   contextLength: 20000,
   maxTotalChars: 100000,
@@ -25,7 +24,7 @@ let config = { ...DEFAULT_CONFIG };
 async function loadConfig() {
   try {
     const stored = await chrome.storage.sync.get([
-      'useContext', 'contextLength', 'enableDoubleClick',
+      'useContext', 'contextLength',
       'maxTotalChars', 'maxHistoryRounds', 'myName', 'otherInfo'
     ]);
 
@@ -37,7 +36,6 @@ async function loadConfig() {
       maxHistoryRounds: stored.maxHistoryRounds ?? DEFAULT_CONFIG.maxHistoryRounds,
       myName: stored.myName ?? DEFAULT_CONFIG.myName,
       otherInfo: stored.otherInfo ?? DEFAULT_CONFIG.otherInfo,
-      enableDoubleClick: stored.enableDoubleClick ?? DEFAULT_CONFIG.enableDoubleClick,
     };
 
     console.log("[Config] 配置已从本地存储加载");

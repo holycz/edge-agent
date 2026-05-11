@@ -94,8 +94,6 @@ const UI_COMPONENTS_TO_REMOVE = [
 
 // ========== 全局状态 ==========
 
-/** 双击功能状态 */
-let doubleClickEnabled = false;
 /** 侧边栏状态 */
 let sidePanelOpen = false;
 
@@ -831,42 +829,6 @@ function getPageMetadata() {
   };
 }
 
-// ========== 双击功能 ==========
-
-/**
- * 处理双击事件
- */
-async function handleDoubleClick() {
-  if (!doubleClickEnabled) return;
-  if (!getSelectedText()) {
-    chrome.runtime.sendMessage({ 
-      type: MESSAGE_TYPES.TOGGLE_SIDEPANEL,
-      isOpen: sidePanelOpen
-    });
-    sidePanelOpen = !sidePanelOpen;
-  }
-}
-
-/**
- * 更新双击状态
- */
-function updateDoubleClickState() {
-  if (doubleClickEnabled) {
-    document.addEventListener('dblclick', handleDoubleClick);
-  } else {
-    document.removeEventListener('dblclick', handleDoubleClick);
-  }
-}
-
-/**
- * 初始化双击设置
- */
-async function initDoubleClickSetting() {
-  const res = await chrome.storage.sync.get('enableDoubleClick');
-  doubleClickEnabled = res.enableDoubleClick === true;
-  updateDoubleClickState();
-}
-
 // ========== 页面变化监听 ==========
 
 /**
@@ -960,16 +922,6 @@ chrome.runtime.onMessage.addListener((msg, _, res) => {
   }
 });
 
-// ========== 设置监听 ==========
-
-chrome.storage.onChanged.addListener(changes => {
-  if (changes.enableDoubleClick) {
-    doubleClickEnabled = changes.enableDoubleClick.newValue === true;
-    updateDoubleClickState();
-  }
-});
-
 // ========== 初始化 ==========
 
-initDoubleClickSetting();
 startPageChangeDetection();
