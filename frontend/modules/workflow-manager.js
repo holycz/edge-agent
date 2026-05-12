@@ -176,7 +176,7 @@ async function verifyWorkflow(endpointId, authToken) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    const response = await fetch(`${backendUrl}/sxzypt/scene_gateway/${endpointId}`, {
+    const response = await fetch(`${backendUrl}/sxzypt/scene_gateway/sse/${endpointId}`, {
       method: 'POST',
       headers: {
         'AuthToken': authToken,

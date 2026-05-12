@@ -529,27 +529,102 @@ async def upload_files(
 
 # 支持的场景端点配置
 SCENE_GATEWAY_ENDPOINTS = {
-    "fe49c25aba4a4b23b5a9c679286a68e5": {
-        "name": "直播话术修复",
-        "auth_token": "950fcd3e9e7d4f4ba344158fb854ddc8",
-        "system_prompt": """你是一位专业的直播话术编辑专家。请对用户提供的直播话术文本进行修复和优化，要求：
-1. 修正语法错误和错别字
-2. 优化表达，使话术更流畅、更有感染力
-3. 保持原意不变
-4. 适合直播场景的口语化表达
+    "b6eec25e63fe414987cb3e5d2ab655aa": {
+        "name": "直播话术打分",
+        "auth_token": "7f0083451d46482495f1b43107c2e959",
+        "system_prompt": """你是一位专业的直播话术评审专家。请对用户提供的直播话术进行打分和评价，要求：
+1. 从话术的吸引力、逻辑性、感染力、专业性等维度进行评分
+2. 每个维度给出1-10分的评分
+3. 指出话术的优点和不足
+4. 给出改进建议
+5. 给出综合评分和总结
 
-请输出修复后的完整话术。""",
+请输出详细的评分报告。""",
     },
-    "90ca11ab78074e61abc3c0ab8f7f4483": {
-        "name": "卖点提取",
-        "auth_token": "5a0506aee0df4dbe8375a76f1fe420ee",
-        "system_prompt": """你是一位专业的产品分析师。请从用户提供的内容中提取关键卖点，要求：
-1. 提取核心卖点，每个卖点用简洁的语言概括
-2. 按重要性排序
-3. 突出产品/服务的独特优势
-4. 使用清晰的格式输出
+    "b18651667a744c949c65130328f01946": {
+        "name": "失败案例复盘智能体",
+        "auth_token": "4cd344898c0f4b1b8483a395b71c5636",
+        "system_prompt": """你是一位专业的销售培训专家。请对用户提供的失败案例进行复盘分析，要求：
+1. 分析失败的根本原因
+2. 指出关键的失误环节
+3. 提供具体的改进措施
+4. 给出类似场景的应对策略
+5. 总结经验教训
 
-请输出提取的卖点列表。""",
+请输出详细的复盘分析报告。""",
+    },
+    "53dfe4e721084030b8ddcc0cfe56ff5a": {
+        "name": "直播脚本生成",
+        "auth_token": "950fcd3e9e7d4f4ba344158fb854ddc8",
+        "system_prompt": """你是一位专业的直播脚本编剧。请根据用户提供的产品信息和需求，生成完整的直播脚本，要求：
+1. 包含开场白、产品介绍、互动环节、促单话术、结尾等完整流程
+2. 话术要口语化、有感染力
+3. 包含适当的产品卖点强调
+4. 包含与观众互动的设计
+5. 时间节奏合理
+
+请输出完整的直播脚本。""",
+    },
+    "03a2e05bbbbb47c6822f817532f282ee": {
+        "name": "电销话术工作流",
+        "auth_token": "2ed10d86f21b492f8a9f4590787c79c1",
+        "system_prompt": """你是一位专业的电话销售话术专家。请根据用户提供的产品信息和销售场景，生成专业的电销话术，要求：
+1. 包含开场白、需求挖掘、产品介绍、异议处理、促成成交等完整流程
+2. 话术简洁明了，适合电话沟通
+3. 包含常见异议的应对方案
+4. 语气专业友善，有亲和力
+5. 包含跟进策略
+
+请输出完整的电销话术。""",
+    },
+    "34103af5f0554bbfbca6fa08c051d601": {
+        "name": "应对话术工作流",
+        "auth_token": "8a58aceed2534c4c9feacc658323c1b9",
+        "system_prompt": """你是一位专业的销售应对话术专家。请根据用户提供的客户问题或异议，生成专业的应对话术，要求：
+1. 分析客户问题的核心诉求
+2. 提供多种应对方案
+3. 话术要专业、有说服力
+4. 包含进一步引导的技巧
+5. 注意维护客户关系
+
+请输出专业的应对话术。""",
+    },
+    "c96deac874ac47d0a6b5280b68cbc77e": {
+        "name": "产品信息及卖点提取",
+        "auth_token": "5a0506aee0df4dbe8375a76f1fe420ee",
+        "system_prompt": """你是一位专业的产品分析师。请从用户提供的内容中提取产品信息和关键卖点，要求：
+1. 提取产品的核心信息（名称、功能、特点等）
+2. 提取核心卖点，每个卖点用简洁的语言概括
+3. 按重要性排序
+4. 突出产品/服务的独特优势
+5. 使用清晰的格式输出
+
+请输出提取的产品信息和卖点列表。""",
+    },
+    "7caeaadb1e964274938981b36211a7f7": {
+        "name": "直播话术订正",
+        "auth_token": "290adc62ebd54d76a71e2087d8a43d56",
+        "system_prompt": """你是一位专业的直播话术编辑专家。请对用户提供的直播话术进行订正和优化，要求：
+1. 修正语法错误、错别字和不当表达
+2. 优化话术的流畅度和感染力
+3. 确保话术符合直播场景的口语化特点
+4. 保持原意不变
+5. 适当增加互动元素
+
+请输出订正后的完整话术。""",
+    },
+    "cd5695e0db7d4b74b9013a9b68377148": {
+        "name": "产品销售培训文档",
+        "auth_token": "ecceb736bb4246b8ba91b984d99b8b91",
+        "system_prompt": """你是一位专业的销售培训师。请根据用户提供的产品信息，生成专业的产品销售培训文档，要求：
+1. 产品概述和核心价值
+2. 目标客户画像分析
+3. 核心卖点和话术
+4. 常见客户异议及应对方案
+5. 销售技巧和注意事项
+6. 竞品对比分析
+
+请输出完整的销售培训文档。""",
     },
 }
 
@@ -711,4 +786,129 @@ async def scene_gateway(
             },
             status_code=500,
         )
+
+
+@router.post("/sxzypt/scene_gateway/sse/{endpoint_id}")
+async def scene_gateway_sse(
+    endpoint_id: str,
+    keyword: str = Form(...),
+    requestId: str = Form(...),
+    input_file: Optional[UploadFile] = File(None),
+    AuthToken: Optional[str] = Header(None),
+):
+    """智云平台接口模拟 - SSE流式接口
+
+    模拟智云平台的工具流SSE接口，接收 keyword 作为输入，调用大模型后以SSE格式逐字符返回结果。
+
+    请求格式：multipart/form-data
+    - keyword: 输入内容（必填）
+    - requestId: 请求ID，格式：时间戳(13位) + 6位随机数（必填）
+    - input_file: 上传的文件（可选）
+
+    请求头：
+    - AuthToken: 认证令牌
+
+    响应格式：SSE流，每行一个字符
+    data:字
+    data:符
+    data:1
+    data:字
+    data:符
+    data:2
+    ...
+    data: [DONE]
+    """
+    # 验证端点是否存在
+    endpoint_config = SCENE_GATEWAY_ENDPOINTS.get(endpoint_id)
+    if not endpoint_config:
+        async def error_stream_not_found():
+            yield f"data: 端点不存在: {endpoint_id}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(
+            error_stream_not_found(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # 验证 AuthToken
+    expected_token = endpoint_config.get("auth_token")
+    if expected_token and AuthToken != expected_token:
+        logger.warning(f"[SceneGatewaySSE] AuthToken 验证失败: expected={expected_token}, got={AuthToken}")
+        async def error_stream_auth():
+            yield "data: AuthToken验证失败\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(
+            error_stream_auth(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # 读取文件内容（如果有）
+    file_content = ""
+    if input_file:
+        try:
+            file_bytes = await input_file.read()
+            try:
+                file_content = file_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    file_content = file_bytes.decode("gbk")
+                except UnicodeDecodeError:
+                    file_content = file_bytes.decode("latin-1")
+            logger.info(f"[SceneGatewaySSE] 读取文件: {input_file.filename}, 长度: {len(file_content)}")
+        except Exception as e:
+            logger.error(f"[SceneGatewaySSE] 读取文件失败: {str(e)}")
+
+    # 构建完整的输入内容
+    full_input = keyword
+    if file_content:
+        full_input = f"{keyword}\n\n附件内容：\n{file_content}"
+
+    # 构建消息列表
+    system_prompt = endpoint_config.get("system_prompt", "")
+    messages = []
+    if system_prompt:
+        messages.append(ChatMessage(role="system", content=system_prompt))
+    messages.append(ChatMessage(role="user", content=full_input))
+
+    # 生成会话ID
+    session_id = f"{requestId[:13]}{requestId[13:]}" if len(requestId) >= 13 else requestId
+
+    # 构建 ChatRequest 对象
+    chat_request = ChatRequest(
+        request_id=requestId,
+        dialogId=session_id,
+        keyword=full_input,
+        messages=messages,
+        stream=True,
+        enable_thinking=False,
+    )
+
+    async def sse_stream():
+        try:
+            logger.info(f"[SceneGatewaySSE] 开始流式调用大模型，端点: {endpoint_id}, keyword长度: {len(keyword)}")
+
+            # 流式调用大模型
+            async for event in stream_chat(chat_request):
+                if event["type"] == "chunk" and event["content_type"] == "content":
+                    # 直接发送内容块，换行符转义为 \\n
+                    content = event["content"].replace("\\", "\\\\").replace("\n", "\\n")
+                    yield f"data:{content}\n\n"
+                elif event["type"] == "done":
+                    break
+                elif event["type"] == "error":
+                    yield f"data:错误: {event['error']}\n\n"
+                    break
+
+            logger.info(f"[SceneGatewaySSE] 流式调用完成，端点: {endpoint_id}")
+
+        except Exception as e:
+            logger.error(f"[SceneGatewaySSE] 大模型调用失败: {str(e)}")
+            yield f"data:大模型调用失败: {str(e)}\n\n"
+
+    return StreamingResponse(
+        sse_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 

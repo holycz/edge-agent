@@ -258,7 +258,7 @@ async function callWorkflow(workflowId, content, pageMetadata = {}, dialogId = n
 
     chrome.runtime.sendMessage({
       type: MESSAGE_TYPES.API_STREAM_REQUEST,
-      endpoint: `${API_ENDPOINTS.WORKFLOW}/${workflow.endpoint_id}`,
+      endpoint: `${API_ENDPOINTS.WORKFLOW_SSE}/${workflow.endpoint_id}`,
       body: JSON.stringify(requestBody),
       sessionId: currentStreamSessionId,
       dialogId: currentDialogId,

@@ -35,6 +35,7 @@ const API_ENDPOINTS = {
   AGENT: '/sxzypt/py_talkHub/agent/agent',
   UPLOAD: '/sxzypt/aistar_server/agent/upload',
   WORKFLOW: '/sxzypt/scene_gateway', // 工作流端点前缀
+  WORKFLOW_SSE: '/sxzypt/scene_gateway/sse', // 工作流SSE端点前缀
 };
 
 // ========== 后端URL配置 ==========
@@ -612,12 +613,24 @@ async function processStreamResponse(res, sessionId, abortController) {
     buffer = lines.pop() || '';
 
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data: ')) continue;
+      const trimmed = line.replace(/\r$/, '');
+      // 支持 data: 和 data: 两种格式
+      if (!trimmed.startsWith('data:')) continue;
 
-      const dataStr = trimmed.substring(6);
-      if (!dataStr) continue;
+      // 提取 data: 后面的内容
+      let dataStr = trimmed.substring(5);
 
+      // 处理结束标记
+      if (dataStr === '[DONE]') {
+        chrome.runtime.sendMessage({
+          type: MESSAGE_TYPES.STREAM_DONE,
+          sessionId
+        }).catch(() => {});
+        activeStreams.delete(sessionId);
+        return;
+      }
+
+      // 尝试 JSON 解析（兼容智能体接口的 OpenAI 格式）
       try {
         const parsed = JSON.parse(dataStr);
         const choices = parsed.choices;
@@ -691,7 +704,16 @@ async function processStreamResponse(res, sessionId, abortController) {
           }).catch(() => {});
         }
       } catch (e) {
-        // 忽略部分块的解析错误
+        // JSON 解析失败，说明是工具流的纯文本内容格式
+        // 还原转义：\\n → 换行符，\\\\ → 反斜杠
+        const content = dataStr.replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+        console.log('[SSE工具流] 收到内容:', JSON.stringify(content), '原始:', JSON.stringify(dataStr));
+        chrome.runtime.sendMessage({
+          type: MESSAGE_TYPES.STREAM_CHUNK,
+          content: content,
+          contentType: "content",
+          sessionId
+        }).catch(() => {});
       }
     }
   }
