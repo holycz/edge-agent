@@ -630,87 +630,95 @@ async function processStreamResponse(res, sessionId, abortController) {
         return;
       }
 
-      // 尝试 JSON 解析（兼容智能体接口的 OpenAI 格式）
-      try {
-        const parsed = JSON.parse(dataStr);
-        const choices = parsed.choices;
-        if (!choices || !Array.isArray(choices) || choices.length === 0) continue;
+      // 尝试 JSON 解析（仅当内容以 { 开头时，兼容智能体接口的 OpenAI 格式）
+      if (dataStr.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(dataStr);
+          const choices = parsed.choices;
+          if (!choices || !Array.isArray(choices) || choices.length === 0) continue;
 
-        const delta = choices[0].delta;
-        if (!delta) continue;
+          const delta = choices[0].delta;
+          if (!delta) continue;
 
-        // 处理错误
-        if (delta.error) {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_ERROR,
-            error: delta.error,
-            sessionId
-          }).catch(() => {});
-          activeStreams.delete(sessionId);
-          return;
-        }
+          // 处理错误
+          if (delta.error) {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_ERROR,
+              error: delta.error,
+              sessionId
+            }).catch(() => {});
+            activeStreams.delete(sessionId);
+            return;
+          }
 
-        // 处理状态更新 (think_start)
-        if (delta.status === "processing") {
+          // 处理状态更新 (think_start)
+          if (delta.status === "processing") {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_CHUNK,
+              content: "",
+              contentType: "think_start",
+              sessionId
+            }).catch(() => {});
+            continue;
+          }
+
+          // 处理推理内容
+          if (delta.reasoning_content) {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_CHUNK,
+              content: delta.reasoning_content,
+              contentType: "think",
+              sessionId
+            }).catch(() => {});
+            continue;
+          }
+
+          // 处理性能指标 (think_end)
+          if (delta.performanceMetrics) {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_CHUNK,
+              content: "",
+              contentType: "think_end",
+              performanceMetrics: delta.performanceMetrics,
+              sessionId
+            }).catch(() => {});
+            continue;
+          }
+
+          // 处理结束标记
+          if (delta.content === "end##end") {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_DONE,
+              sessionId
+            }).catch(() => {});
+            activeStreams.delete(sessionId);
+            return;
+          }
+
+          // 处理普通内容
+          if (delta.content !== undefined) {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_CHUNK,
+              content: delta.content,
+              contentType: "content",
+              sessionId
+            }).catch(() => {});
+          }
+        } catch (e) {
+          // JSON 解析失败，作为纯文本处理
+          console.log('[SSE工具流] content:', JSON.stringify(dataStr));
           chrome.runtime.sendMessage({
             type: MESSAGE_TYPES.STREAM_CHUNK,
-            content: "",
-            contentType: "think_start",
-            sessionId
-          }).catch(() => {});
-          continue;
-        }
-
-        // 处理推理内容
-        if (delta.reasoning_content) {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_CHUNK,
-            content: delta.reasoning_content,
-            contentType: "think",
-            sessionId
-          }).catch(() => {});
-          continue;
-        }
-
-        // 处理性能指标 (think_end)
-        if (delta.performanceMetrics) {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_CHUNK,
-            content: "",
-            contentType: "think_end",
-            performanceMetrics: delta.performanceMetrics,
-            sessionId
-          }).catch(() => {});
-          continue;
-        }
-
-        // 处理结束标记
-        if (delta.content === "end##end") {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_DONE,
-            sessionId
-          }).catch(() => {});
-          activeStreams.delete(sessionId);
-          return;
-        }
-
-        // 处理普通内容
-        if (delta.content !== undefined) {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_CHUNK,
-            content: delta.content,
+            content: dataStr,
             contentType: "content",
             sessionId
           }).catch(() => {});
         }
-      } catch (e) {
-        // JSON 解析失败，说明是工具流的纯文本内容格式
-        // 还原转义：\\n → 换行符，\\\\ → 反斜杠
-        const content = dataStr.replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-        console.log('[SSE工具流] 收到内容:', JSON.stringify(content), '原始:', JSON.stringify(dataStr));
+      } else {
+        // 非 JSON 格式，直接作为纯文本内容
         chrome.runtime.sendMessage({
           type: MESSAGE_TYPES.STREAM_CHUNK,
-          content: content,
+          content: dataStr,
           contentType: "content",
           sessionId
         }).catch(() => {});

@@ -453,6 +453,14 @@ function handleStreamMessage(msg) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
+    // 流结束后最终渲染
+    if (currentBotBubble) {
+      const finalBubble = currentBotBubble.content.querySelector('.ai-bot:not(.ai-think)');
+      if (finalBubble) {
+        finalBubble.innerHTML = parseMarkdown(accumulatedText);
+      }
+    }
+
     isStreaming = false;
     currentStreamSessionId = null;
     updateSendButtonState();
