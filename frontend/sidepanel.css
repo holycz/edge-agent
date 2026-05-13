@@ -2173,6 +2173,20 @@ html, body {
   border: 1px solid #ffcc80;
 }
 
+/* 工作流标签 */
+.ai-tag-workflow {
+  background: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
 .ai-agent-desc {
   font-size: 12px;
   color: var(--text-secondary);
@@ -2560,6 +2574,281 @@ html, body {
 .ai-manage-agent-empty .empty-hint {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+/* ==================== 新增工作流弹窗 ==================== */
+.ai-add-workflow-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-add-workflow-modal-content {
+  width: 90%;
+  max-width: 420px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: modalIn var(--transition-normal);
+}
+
+.ai-add-workflow-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+  color: white;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.ai-add-workflow-modal-close {
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0.9;
+  transition: opacity var(--transition-normal);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.ai-add-workflow-modal-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.ai-add-workflow-modal-body {
+  padding: 20px;
+}
+
+.ai-add-workflow-form-item {
+  margin-bottom: 16px;
+}
+
+.ai-add-workflow-form-item label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.ai-add-workflow-form-item label .required {
+  color: var(--color-error);
+  margin-left: 2px;
+}
+
+.ai-add-workflow-form-item input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition-normal);
+}
+
+.ai-add-workflow-form-item input:focus {
+  border-color: #1565c0;
+  box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.1);
+}
+
+.ai-add-workflow-verify-status {
+  font-size: 12px;
+  min-height: 20px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-normal);
+}
+
+.ai-add-workflow-verify-status.error {
+  color: var(--color-error);
+}
+
+.ai-add-workflow-verify-status.success {
+  color: var(--color-success);
+}
+
+.ai-add-workflow-verify-status.verifying {
+  color: var(--color-warning);
+}
+
+.ai-add-workflow-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color-light);
+}
+
+.ai-add-workflow-modal-cancel {
+  padding: 8px 20px;
+  border: 1px solid #d9d9d9;
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ai-add-workflow-modal-cancel:hover {
+  border-color: #1565c0;
+  color: #1565c0;
+}
+
+.ai-add-workflow-modal-verify {
+  padding: 8px 20px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+  cursor: pointer;
+  font-size: 13px;
+  color: white;
+  font-weight: 500;
+  transition: opacity var(--transition-normal);
+}
+
+.ai-add-workflow-modal-verify:hover {
+  opacity: 0.9;
+}
+
+.ai-add-workflow-modal-verify:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ==================== 管理工作流弹窗 ==================== */
+.ai-manage-workflow-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-manage-workflow-modal-content {
+  width: 90%;
+  max-width: 480px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: modalIn var(--transition-normal);
+}
+
+.ai-manage-workflow-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+  color: white;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.ai-manage-workflow-modal-close {
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0.9;
+  transition: opacity var(--transition-normal);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.ai-manage-workflow-modal-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.ai-manage-workflow-modal-body {
+  padding: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.ai-manage-workflow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-manage-workflow-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color-light);
+}
+
+.ai-manage-workflow-modal-close-btn {
+  padding: 8px 24px;
+  border: 1px solid #d9d9d9;
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ai-manage-workflow-modal-close-btn:hover {
+  border-color: #1565c0;
+  color: #1565c0;
+}
+
+.ai-manage-workflow-empty {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.ai-manage-workflow-empty .empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.ai-manage-workflow-empty .empty-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.ai-manage-workflow-empty .empty-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* ==================== 工作流新增按钮 ==================== */
+.ai-workflow-modal-add-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: all var(--transition-normal);
+}
+
+.ai-workflow-modal-add-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
 }
 
 /* ==================== 搜索功能 ==================== */

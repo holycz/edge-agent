@@ -48,29 +48,24 @@ async function getBackendUrl() {
 /**
  * 初始化Markdown解析器
  */
+let md = null;
 function initMarkdownParser() {
-  if (typeof marked !== 'undefined') {
-    marked.setOptions({
-      gfm: true,
+  if (typeof window.markdownit !== 'undefined') {
+    md = window.markdownit({
+      html: true,
+      linkify: true,
+      typographer: false,
       breaks: true,
-      headerIds: false,
-      mangle: false,
-      sanitize: false,
-      smartLists: true,
-      smartypants: true,
-      xhtml: false,
-      highlight: function(code, lang) {
+      highlight: function (str, lang) {
         if (typeof hljs !== 'undefined') {
           try {
             if (lang && hljs.getLanguage(lang)) {
-              return hljs.highlight(code, { language: lang }).value;
+              return hljs.highlight(str, { language: lang }).value;
             }
-            return hljs.highlightAuto(code).value;
-          } catch (e) {
-            return code;
-          }
+            return hljs.highlightAuto(str).value;
+          } catch (e) {}
         }
-        return code;
+        return '';
       }
     });
   }
@@ -84,11 +79,13 @@ function initMarkdownParser() {
 function parseMarkdown(text) {
   if (!text) return '';
 
-  if (typeof marked !== 'undefined') {
+  if (md) {
     try {
-      return marked.parse(text);
+      // 后端将 \n 转为 <br />，需还原为 \n 让 markdown-it 正确解析列表/标题等块级元素
+      const normalized = text.replace(/<br\s*\/?>/gi, '\n');
+      return md.render(normalized);
     } catch (e) {
-      console.log('Marked parsing failed:', e);
+      console.log('markdown-it parsing failed:', e);
     }
   }
 

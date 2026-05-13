@@ -96,6 +96,8 @@ const EXCLUDED_PAGE_PATTERNS = [
 const API_ENDPOINTS = {
   AGENT: '/sxzypt/py_talkHub/agent/agent',
   UPLOAD: '/sxzypt/aistar_server/agent/upload',
+  WORKFLOW: '/sxzypt/scene_gateway', // 工作流端点前缀，完整路径为 /sxzypt/scene_gateway/{endpoint_id}
+  WORKFLOW_SSE: '/sxzypt/scene_gateway/sse', // 工作流SSE端点前缀，完整路径为 /sxzypt/scene_gateway/sse/{endpoint_id}
 };
 
 // ========== 文件限制 ==========

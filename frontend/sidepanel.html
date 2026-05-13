@@ -160,11 +160,11 @@
     </div>
   </div>
 
-  <!-- 智能体选择弹窗 -->
+  <!-- 智能体/工作流选择弹窗 -->
   <div class="ai-agent-modal" id="ai-agent-modal" style="display: none;">
     <div class="ai-agent-modal-content">
       <div class="ai-agent-modal-header">
-        <span>选择智能体类型</span>
+        <span>选择智能体/工作流</span>
         <span class="ai-agent-modal-close">×</span>
       </div>
       <div class="ai-agent-modal-body">
@@ -201,10 +201,18 @@
               <!-- 动态生成 -->
             </div>
           </div>
+          <!-- 工作流列表将动态生成 -->
+          <div class="ai-agent-section" id="ai-custom-workflow-section" style="display: none;">
+            <div class="ai-agent-section-title">⚡ 工作流</div>
+            <div class="ai-custom-workflow-list" id="ai-custom-workflow-list">
+              <!-- 动态生成 -->
+            </div>
+          </div>
         </div>
       </div>
       <div class="ai-agent-modal-footer">
         <button class="ai-agent-modal-add-btn" id="ai-agent-modal-add-btn">➕ 新增智能体</button>
+        <button class="ai-workflow-modal-add-btn" id="ai-workflow-modal-add-btn">⚡ 新增工作流</button>
       </div>
     </div>
   </div>
@@ -269,7 +277,67 @@
     </div>
   </div>
 
-  <script src="lib/marked.min.js"></script>
+  <!-- 新增工作流弹窗 -->
+  <div class="ai-add-workflow-modal" id="ai-add-workflow-modal" style="display: none;">
+    <div class="ai-add-workflow-modal-content">
+      <div class="ai-add-workflow-modal-header">
+        <span>新增工作流</span>
+        <span class="ai-add-workflow-modal-close">×</span>
+      </div>
+      <div class="ai-add-workflow-modal-body">
+        <div class="ai-add-workflow-form-item">
+          <label>工作流名称 <span class="required">*</span></label>
+          <input type="text" id="ai-add-workflow-name" placeholder="例如：直播话术修复、卖点提取">
+        </div>
+        <div class="ai-add-workflow-form-item">
+          <label>工作流端点ID <span class="required">*</span></label>
+          <input type="text" id="ai-add-workflow-endpoint" placeholder="32位工作流端点唯一标识">
+        </div>
+        <div class="ai-add-workflow-form-item">
+          <label>AuthToken <span class="required">*</span></label>
+          <input type="password" id="ai-add-workflow-token" placeholder="工作流认证令牌">
+        </div>
+        <div class="ai-add-workflow-form-item">
+          <label>图标</label>
+          <input type="text" id="ai-add-workflow-icon" placeholder="emoji图标，如：⚡" maxlength="2" value="⚡">
+        </div>
+        <div class="ai-add-workflow-form-item">
+          <label>描述</label>
+          <input type="text" id="ai-add-workflow-desc" placeholder="工作流功能描述">
+        </div>
+        <div class="ai-add-workflow-verify-status" id="ai-add-workflow-verify-status"></div>
+      </div>
+      <div class="ai-add-workflow-modal-footer">
+        <button class="ai-add-workflow-modal-cancel">取消</button>
+        <button class="ai-add-workflow-modal-verify" id="ai-add-workflow-verify-btn">✅ 验证并保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 管理工作流弹窗 -->
+  <div class="ai-manage-workflow-modal" id="ai-manage-workflow-modal" style="display: none;">
+    <div class="ai-manage-workflow-modal-content">
+      <div class="ai-manage-workflow-modal-header">
+        <span>管理工作流</span>
+        <span class="ai-manage-workflow-modal-close">×</span>
+      </div>
+      <div class="ai-manage-workflow-modal-body">
+        <div class="ai-manage-workflow-list" id="ai-manage-workflow-list">
+          <!-- 动态生成工作流列表 -->
+        </div>
+        <div class="ai-manage-workflow-empty" id="ai-manage-workflow-empty" style="display: none;">
+          <div class="empty-icon">⚡</div>
+          <div class="empty-text">暂无自定义工作流</div>
+          <div class="empty-hint">点击"新增工作流"添加您的第一个工作流</div>
+        </div>
+      </div>
+      <div class="ai-manage-workflow-modal-footer">
+        <button class="ai-manage-workflow-modal-close-btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="lib/markdown-it.min.js"></script>
   <script src="lib/highlight.core.min.js"></script>
   <!-- 全局变量和常量（必须最先加载） -->
   <script src="modules/globals.js"></script>
@@ -277,6 +345,7 @@
   <script src="modules/config.js"></script>
   <script src="modules/utils.js"></script>
   <script src="modules/agent-manager.js"></script>
+  <script src="modules/workflow-manager.js"></script>
   <script src="modules/storage.js"></script>
   <script src="modules/session.js"></script>
   <script src="modules/ui.js"></script>

@@ -126,6 +126,34 @@ async function handleFileSelect(event) {
     return;
   }
 
+  // 检查当前会话是否是工作流会话
+  const currentSession = SessionManager.getCurrentSession();
+  const isWorkflow = currentSession?.dialogType === 'workflow';
+
+  if (isWorkflow) {
+    // 工作流会话：直接保存文件信息，不调用上传接口
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const arrayBuffer = e.target.result;
+      uploadedFiles = [{
+        fileName: file.name,
+        fileType: file.type,
+        fileData: Array.from(new Uint8Array(arrayBuffer)),
+        isWorkflowFile: true // 标记为工作流文件
+      }];
+      lastUploadFile = null;
+      showFilePreview(file.name, true);
+      showToast('文件已选择');
+    };
+    reader.onerror = function() {
+      showToast('文件读取失败');
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
+    return;
+  }
+
+  // 非工作流会话：调用上传接口
   showFilePreview(file.name, false);
 
   isUploading = true;

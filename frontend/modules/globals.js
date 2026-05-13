@@ -30,6 +30,8 @@ const STREAM_CONTENT_TYPES = {
 
 const API_ENDPOINTS = {
   AGENT: '/sxzypt/py_talkHub/agent/agent',
+  WORKFLOW: '/sxzypt/scene_gateway', // 工作流端点前缀
+  WORKFLOW_SSE: '/sxzypt/scene_gateway/sse', // 工作流SSE端点前缀
 };
 
 const EXCLUDED_PAGE_PATTERNS = [
@@ -78,6 +80,9 @@ let pageContextCache = null;
 
 // ========== 自定义智能体状态 ==========
 let customAgents = [];
+
+// ========== 自定义工作流状态 ==========
+let customWorkflows = [];
 
 // ========== 搜索状态 ==========
 let searchResults = [];

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -6,10 +7,10 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header
 from fastapi.responses import StreamingResponse, JSONResponse
 
-from app.ai_client import stream_chat
+from app.ai_client import stream_chat, chat_once
 from app.config import get_env
 from app.dialog_manager import dialog_manager
 from app.schemas import ChatRequest, AgentRequest, ChatMessage
@@ -523,4 +524,461 @@ async def upload_files(
             content={"code": 5002, "message": f"文件上传失败: {str(e)}"},
             status_code=500,
         )
+
+
+# ========== 智云平台接口模拟 ==========
+
+# 支持的场景端点配置
+SCENE_GATEWAY_ENDPOINTS = {
+    "b6eec25e63fe414987cb3e5d2ab655aa": {
+        "name": "直播话术打分",
+        "auth_token": "7f0083451d46482495f1b43107c2e959",
+        "system_prompt": """你是一位专业的直播话术评审专家。请对用户提供的直播话术进行打分和评价，要求：
+1. 从话术的吸引力、逻辑性、感染力、专业性等维度进行评分
+2. 每个维度给出1-10分的评分
+3. 指出话术的优点和不足
+4. 给出改进建议
+5. 给出综合评分和总结
+
+请输出详细的评分报告。""",
+    },
+    "b18651667a744c949c65130328f01946": {
+        "name": "失败案例复盘智能体",
+        "auth_token": "4cd344898c0f4b1b8483a395b71c5636",
+        "system_prompt": """你是一位专业的销售培训专家。请对用户提供的失败案例进行复盘分析，要求：
+1. 分析失败的根本原因
+2. 指出关键的失误环节
+3. 提供具体的改进措施
+4. 给出类似场景的应对策略
+5. 总结经验教训
+
+请输出详细的复盘分析报告。""",
+    },
+    "53dfe4e721084030b8ddcc0cfe56ff5a": {
+        "name": "直播脚本生成",
+        "auth_token": "950fcd3e9e7d4f4ba344158fb854ddc8",
+        "system_prompt": """你是一位专业的直播脚本编剧。请根据用户提供的产品信息和需求，生成完整的直播脚本，要求：
+1. 包含开场白、产品介绍、互动环节、促单话术、结尾等完整流程
+2. 话术要口语化、有感染力
+3. 包含适当的产品卖点强调
+4. 包含与观众互动的设计
+5. 时间节奏合理
+
+请输出完整的直播脚本。""",
+    },
+    "03a2e05bbbbb47c6822f817532f282ee": {
+        "name": "电销话术工作流",
+        "auth_token": "2ed10d86f21b492f8a9f4590787c79c1",
+        "system_prompt": """你是一位专业的电话销售话术专家。请根据用户提供的产品信息和销售场景，生成专业的电销话术，要求：
+1. 包含开场白、需求挖掘、产品介绍、异议处理、促成成交等完整流程
+2. 话术简洁明了，适合电话沟通
+3. 包含常见异议的应对方案
+4. 语气专业友善，有亲和力
+5. 包含跟进策略
+
+请输出完整的电销话术。""",
+    },
+    "34103af5f0554bbfbca6fa08c051d601": {
+        "name": "应对话术工作流",
+        "auth_token": "8a58aceed2534c4c9feacc658323c1b9",
+        "system_prompt": """你是一位专业的销售应对话术专家。请根据用户提供的客户问题或异议，生成专业的应对话术，要求：
+1. 分析客户问题的核心诉求
+2. 提供多种应对方案
+3. 话术要专业、有说服力
+4. 包含进一步引导的技巧
+5. 注意维护客户关系
+
+请输出专业的应对话术。""",
+    },
+    "c96deac874ac47d0a6b5280b68cbc77e": {
+        "name": "产品信息及卖点提取",
+        "auth_token": "5a0506aee0df4dbe8375a76f1fe420ee",
+        "system_prompt": """你是一位专业的产品分析师。请从用户提供的内容中提取产品信息和关键卖点，要求：
+1. 提取产品的核心信息（名称、功能、特点等）
+2. 提取核心卖点，每个卖点用简洁的语言概括
+3. 按重要性排序
+4. 突出产品/服务的独特优势
+5. 使用清晰的格式输出
+
+请输出提取的产品信息和卖点列表。""",
+    },
+    "7caeaadb1e964274938981b36211a7f7": {
+        "name": "直播话术订正",
+        "auth_token": "290adc62ebd54d76a71e2087d8a43d56",
+        "system_prompt": """你是一位专业的直播话术编辑专家。请对用户提供的直播话术进行订正和优化，要求：
+1. 修正语法错误、错别字和不当表达
+2. 优化话术的流畅度和感染力
+3. 确保话术符合直播场景的口语化特点
+4. 保持原意不变
+5. 适当增加互动元素
+
+请输出订正后的完整话术。""",
+    },
+    "cd5695e0db7d4b74b9013a9b68377148": {
+        "name": "产品销售培训文档",
+        "auth_token": "ecceb736bb4246b8ba91b984d99b8b91",
+        "system_prompt": """你是一位专业的销售培训师。请根据用户提供的产品信息，生成专业的产品销售培训文档，要求：
+1. 产品概述和核心价值
+2. 目标客户画像分析
+3. 核心卖点和话术
+4. 常见客户异议及应对方案
+5. 销售技巧和注意事项
+6. 竞品对比分析
+
+请输出完整的销售培训文档。""",
+    },
+}
+
+
+@router.post("/sxzypt/scene_gateway/{endpoint_id}")
+async def scene_gateway(
+    endpoint_id: str,
+    keyword: str = Form(...),
+    requestId: str = Form(...),
+    input_file: Optional[UploadFile] = File(None),
+    AuthToken: Optional[str] = Header(None),
+):
+    """智云平台接口模拟 - 非流式接口
+    
+    模拟智云平台的工具流接口，接收 keyword 作为输入，调用大模型后返回结果。
+    
+    请求格式：multipart/form-data
+    - keyword: 输入内容（必填）
+    - requestId: 请求ID，格式：时间戳(13位) + 6位随机数（必填）
+    - input_file: 上传的文件（可选）
+    
+    请求头：
+    - AuthToken: 认证令牌
+    
+    响应格式：JSON
+    {
+        "errMsg": "success",
+        "errCode": 0,
+        "requestId": "xxx",
+        "id": "xxx",
+        "data": {
+            "code": 200,
+            "data": "AI生成的内容",
+            "num": 100,
+            "status": "success",
+            "msg": "",
+            "sendMessage": {}
+        }
+    }
+    """
+    # 验证端点是否存在
+    endpoint_config = SCENE_GATEWAY_ENDPOINTS.get(endpoint_id)
+    if not endpoint_config:
+        return JSONResponse(
+            content={
+                "errMsg": "endpoint not found",
+                "errCode": 404,
+                "requestId": requestId,
+                "id": "",
+                "data": {
+                    "code": 404,
+                    "data": "",
+                    "num": 0,
+                    "status": "error",
+                    "msg": f"未知的端点ID: {endpoint_id}",
+                    "sendMessage": {},
+                },
+            },
+            status_code=404,
+        )
+
+    # 验证 AuthToken
+    expected_token = endpoint_config.get("auth_token")
+    if expected_token and AuthToken != expected_token:
+        logger.warning(f"[SceneGateway] AuthToken 验证失败: expected={expected_token}, got={AuthToken}")
+        return JSONResponse(
+            content={
+                "errMsg": "authentication failed",
+                "errCode": 401,
+                "requestId": requestId,
+                "id": "",
+                "data": {
+                    "code": 401,
+                    "data": "",
+                    "num": 0,
+                    "status": "error",
+                    "msg": "AuthToken 验证失败",
+                    "sendMessage": {},
+                },
+            },
+            status_code=401,
+        )
+
+    # 读取文件内容（如果有）
+    file_content = ""
+    if input_file:
+        try:
+            file_bytes = await input_file.read()
+            # 尝试解码为文本
+            try:
+                file_content = file_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    file_content = file_bytes.decode("gbk")
+                except UnicodeDecodeError:
+                    file_content = file_bytes.decode("latin-1")
+            logger.info(f"[SceneGateway] 读取文件: {input_file.filename}, 长度: {len(file_content)}")
+        except Exception as e:
+            logger.error(f"[SceneGateway] 读取文件失败: {str(e)}")
+
+    # 构建完整的输入内容
+    full_input = keyword
+    if file_content:
+        full_input = f"{keyword}\n\n附件内容：\n{file_content}"
+
+    # 构建消息列表
+    system_prompt = endpoint_config.get("system_prompt", "")
+    messages = []
+    if system_prompt:
+        messages.append(ChatMessage(role="system", content=system_prompt))
+    messages.append(ChatMessage(role="user", content=full_input))
+
+    # 生成会话ID
+    session_id = f"{requestId[:13]}{requestId[13:]}" if len(requestId) >= 13 else requestId
+
+    try:
+        # 调用大模型（非流式）
+        logger.info(f"[SceneGateway] 开始调用大模型，端点: {endpoint_id}, keyword长度: {len(keyword)}")
+        ai_response = await chat_once(messages)
+        logger.info(f"[SceneGateway] 大模型调用完成，响应长度: {len(ai_response)}")
+
+        # 返回响应
+        return JSONResponse(
+            content={
+                "errMsg": "success",
+                "errCode": 0,
+                "requestId": requestId,
+                "id": session_id,
+                "data": {
+                    "code": 200,
+                    "data": ai_response,
+                    "num": len(ai_response),
+                    "status": "success",
+                    "msg": "",
+                    "sendMessage": {
+                        "inprompt_llm": keyword[:50] + "..." if len(keyword) > 50 else keyword,
+                    },
+                },
+            },
+            status_code=200,
+        )
+
+    except Exception as e:
+        logger.error(f"[SceneGateway] 大模型调用失败: {str(e)}")
+        return JSONResponse(
+            content={
+                "errMsg": "internal error",
+                "errCode": 500,
+                "requestId": requestId,
+                "id": session_id,
+                "data": {
+                    "code": 500,
+                    "data": "",
+                    "num": 0,
+                    "status": "error",
+                    "msg": f"大模型调用失败: {str(e)}",
+                    "sendMessage": {},
+                },
+            },
+            status_code=500,
+        )
+
+
+@router.post("/sxzypt/scene_gateway/sse/{endpoint_id}")
+async def scene_gateway_sse(
+    endpoint_id: str,
+    keyword: str = Form(...),
+    requestId: str = Form(...),
+    input_file: Optional[UploadFile] = File(None),
+    AuthToken: Optional[str] = Header(None),
+):
+    """智云平台接口模拟 - SSE流式接口
+
+    模拟智云平台的工具流SSE接口，接收 keyword 作为输入，调用大模型后以SSE格式逐字符返回结果。
+
+    请求格式：multipart/form-data
+    - keyword: 输入内容（必填）
+    - requestId: 请求ID，格式：时间戳(13位) + 6位随机数（必填）
+    - input_file: 上传的文件（可选）
+
+    请求头：
+    - AuthToken: 认证令牌
+
+    响应格式：SSE流，每行一个字符
+    data:字
+    data:符
+    data:1
+    data:字
+    data:符
+    data:2
+    ...
+    data: [DONE]
+    """
+    # 验证端点是否存在
+    endpoint_config = SCENE_GATEWAY_ENDPOINTS.get(endpoint_id)
+    if not endpoint_config:
+        async def error_stream_not_found():
+            yield f"data: 端点不存在: {endpoint_id}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(
+            error_stream_not_found(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # 验证 AuthToken
+    expected_token = endpoint_config.get("auth_token")
+    if expected_token and AuthToken != expected_token:
+        logger.warning(f"[SceneGatewaySSE] AuthToken 验证失败: expected={expected_token}, got={AuthToken}")
+        async def error_stream_auth():
+            yield "data: AuthToken验证失败\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(
+            error_stream_auth(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # 读取文件内容（如果有）
+    file_content = ""
+    if input_file:
+        try:
+            file_bytes = await input_file.read()
+            try:
+                file_content = file_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    file_content = file_bytes.decode("gbk")
+                except UnicodeDecodeError:
+                    file_content = file_bytes.decode("latin-1")
+            logger.info(f"[SceneGatewaySSE] 读取文件: {input_file.filename}, 长度: {len(file_content)}")
+        except Exception as e:
+            logger.error(f"[SceneGatewaySSE] 读取文件失败: {str(e)}")
+
+    # 构建完整的输入内容
+    full_input = keyword
+    if file_content:
+        full_input = f"{keyword}\n\n附件内容：\n{file_content}"
+
+    # 构建消息列表
+    system_prompt = endpoint_config.get("system_prompt", "")
+    messages = []
+    if system_prompt:
+        messages.append(ChatMessage(role="system", content=system_prompt))
+    messages.append(ChatMessage(role="user", content=full_input))
+
+    # 生成会话ID
+    session_id = f"{requestId[:13]}{requestId[13:]}" if len(requestId) >= 13 else requestId
+
+    # 构建 ChatRequest 对象
+    chat_request = ChatRequest(
+        request_id=requestId,
+        dialogId=session_id,
+        keyword=full_input,
+        messages=messages,
+        stream=True,
+        enable_thinking=False,
+    )
+
+    # Mock: keyword为"打分"时返回预设流式内容
+    MOCK_DATA = [
+        "##", "  ", "评分", "：<br />", "-", " ", "  开场", "吸引力", "：", "1", "4", "分", "<br />",
+        "-", " ", "产品", "价值", "塑造", "：", "2", "3", "分", "<br />",
+        "-", " ", "互动", "与", "留", "人", "：", "1", "8", "分", "<br />",
+        "-", " ", "信任", "建立", "：", "1", "8", "分", "<br />",
+        "-", " ", "逼", "单", "与", "转化", "：", "1", "9", "分", "<br />",
+        "-", " ", "总", "分", "：", "9", "2", "分", "<br /><br />",
+        "## ", "点", "评", "：<br /><br />",
+        "## ", "优点", "：<br />",
+        "-", " ", "开场", "极具", "冲击", "力", "，", "通过", "数据", "爆", "表", "、",
+        "用户", "期待", "、", "福利", "预告", "迅速", "抓住", "观众", "注意力", "，",
+        "情绪", "饱满", "，", "节奏", "紧凑", "。<br />",
+        "-", " ", "产品", "讲解", "部分", "逻辑", "清晰", "，", "结合", "开发", "人员",
+        "常见", "痛点", "，", "使用", "场景", "描述", "具体", "，", "功能", "展示",
+        "直观", "，", "体现出", "较强", "的", "专业", "性", "。<br />",
+        "-", " ", "逼", "单", "环节", "制造", "了", "强烈的", "稀缺", "感", "和", "紧迫",
+        "感", "，", "价格", "直", "降", "、", "库存", "提醒", "、", "倒", "计", "时",
+        "等", "手段", "运用", "得", "当", "，", "转化", "指令", "明确", "。<br />",
+        "-", " ", "信任", "建立", "方面", "通过", "用户", "好评", "截图", "、", "售后",
+        "无忧", "承诺", "、", "数据", "加密", "等", "增强", "用户", "信心", "。<br />",
+        "-", " ", "助", "播", "配合", "默契", "，", "操作", "及时", "，", "提升了",
+        "直播", "的", "专业", "度", "和", "节奏", "感", "。<br /><br />",
+        "## ", "缺", "点", "：<br />",
+        "-", " ", "开场", "虽", "有", "吸引力", "，", "但", "未能", "在", "3", "秒",
+        "内", "达到", """, "爆", "点", """, "，", "稍", "显", "拖", "沓", "，",
+        "建议", "更", "精", "炼", "地", "切入", "核心", "卖", "点", "。<br />",
+        "-", " ", "产品", "价值", "塑造", "中", "F", "AB", "法则", "应用", "较", "完整",
+        "，", "但", "部分", "功能", "描述", "偏", "技术", "化", "，", "对", "非",
+        "技术人员", "吸引力", "不足", "，", "建议", "增加", "更多", "用户", "收益",
+        "的", "通俗", "化", "表达", "。<br />",
+        "-", " ", "互动", "环节", "虽", "有", "引导", "评论", "，", "但", "形式", "较为",
+        "单一", "，", "缺乏", "抽奖", "、", "福利", "券", "等", "更", "有效的",
+        "互动", "手段", "，", "建议", "增加", "更多", "互动", "玩法", "提升", "观众",
+        "参与", "度", "。<br />",
+        "-", " ", "逼", "单", "环节", "虽", "强", "，", "但", "缺乏", "差异化", "策略",
+        "，", "建议", "根据不同", "用户", "类型", "（", "如", "开发", "、", "运维",
+        "、", "企业", "用户", "）", "设计", "更有", "针对性", "的", "转化", "话",
+        "术", "。<br />",
+        "-", " ", "缺", "乏", "明确", "的", "用户", "分", "层", "和", "个性化", "推荐",
+        "策略", "，", "建议", "在", "直播", "中", "加入", "用户", "画像", "引导",
+        "，", "提升", "精准", "转化", "率", "。<br />",
+        "## ", "总", "结", "性", "评价", "：  <br />",
+        "整体", "直播", "话", "术", "结构", "完整", "、", "节奏", "紧凑", "，",
+        "具备", "较强", "的", "销售", "转化", "能力", "。", "主播", "情绪", "饱满",
+        "，", "产品", "讲解", "专业", "，", "逼", "单", "策略", "清晰", "，", "信任",
+        "建立", "充分", "。", "建议", "在", "开场", "冲击", "力", "、", "互动",
+        "多样性", "、", "用户", "分", "层", "引导", "等", "方面", "进一步", "优化",
+        "，", "以", "提升", "整体", "转化", "效率", "和", "观众", "留存", "率", "。",
+    ]
+
+    async def mock_sse_stream():
+        for chunk in MOCK_DATA:
+            yield f"data:{chunk}\n\n"
+            await asyncio.sleep(0.03)
+
+    async def sse_stream():
+        try:
+            logger.info(f"[SceneGatewaySSE] 开始流式调用大模型，端点: {endpoint_id}, keyword长度: {len(keyword)}")
+
+            if "打分" in keyword:
+                logger.info(f"[SceneGatewaySSE] 命中mock: keyword包含'打分'")
+                async for chunk in mock_sse_stream():
+                    yield chunk
+                return
+
+            if "测试" in keyword:
+                full_text = "".join(MOCK_DATA)
+                logger.info(f"[SceneGatewaySSE] 命中mock: keyword包含'测试', 一次性返回全部内容, 长度: {len(full_text)}")
+                yield f"data:{full_text}\n\n"
+                return
+
+            # 流式调用大模型
+            async for event in stream_chat(chat_request):
+                if event["type"] == "chunk" and event["content_type"] == "content":
+                    # 换行符转为 <br />，markdown可直接渲染
+                    content = event["content"].replace("\n\n", "  <br />")
+                    content = event["content"].replace("\n", "<br />")
+                    yield f"data:{content}\n\n"
+                elif event["type"] == "done":
+                    break
+                elif event["type"] == "error":
+                    yield f"data:错误: {event['error']}\n\n"
+                    break
+
+            logger.info(f"[SceneGatewaySSE] 流式调用完成，端点: {endpoint_id}")
+
+        except Exception as e:
+            logger.error(f"[SceneGatewaySSE] 大模型调用失败: {str(e)}")
+            yield f"data:大模型调用失败: {str(e)}\n\n"
+
+    return StreamingResponse(
+        sse_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 

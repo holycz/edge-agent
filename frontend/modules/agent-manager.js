@@ -214,12 +214,18 @@ function getAgentLabel(agentType) {
 }
 
 /**
- * 更新页面标题显示当前智能体类型
+ * 更新页面标题显示当前智能体/工作流类型
  */
 function updateHeaderTitle() {
   const titleEl = document.querySelector('.ai-title');
   if (!titleEl) return;
   const session = SessionManager.getCurrentSession();
+  const dialogType = session?.dialogType || 'agent';
   const agentType = session?.agentType || AGENT_TYPES.CHAT;
-  titleEl.textContent = getAgentLabel(agentType);
+  
+  if (dialogType === 'workflow') {
+    titleEl.textContent = getWorkflowLabel(agentType);
+  } else {
+    titleEl.textContent = getAgentLabel(agentType);
+  }
 }

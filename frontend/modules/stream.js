@@ -126,6 +126,9 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
   }
 
   try {
+    // 记录请求开始时间
+    streamStartTime = Date.now();
+
     const requestBodyJson = JSON.stringify(requestBody);
     const customAgentKey = CustomAgentManager.getAgentKey(actualAgentId);
     chrome.runtime.sendMessage({
@@ -136,6 +139,131 @@ async function callAgent(agentId, content, isQA = false, pageMetadata = {}, dial
       dialogId: currentDialogId,
       agentId: actualAgentId,
       agentKey: customAgentKey || undefined,
+    });
+
+    return currentDialogId;
+  } catch (e) {
+    if (currentBotBubble) {
+      currentBotBubble.innerHTML = '出错：' + e.message;
+    }
+    currentBotBubble = null;
+    isStreaming = false;
+    updateSendButtonState();
+    throw e;
+  }
+}
+
+/**
+ * 调用工作流接口
+ * @param {string} workflowId - 工作流ID（即endpoint_id）
+ * @param {string} content - 用户输入内容（keyword）
+ * @param {Object} pageMetadata - 页面元信息
+ * @param {string|null} dialogId - 对话ID
+ * @param {boolean} isContinuation - 是否为继续对话
+ * @returns {Promise<string>} 对话ID
+ */
+async function callWorkflow(workflowId, content, pageMetadata = {}, dialogId = null, isContinuation = false) {
+  await loadConfig();
+
+  const backendStatus = await checkBackendStatus();
+  if (!backendStatus.available) {
+    addMessage('bot', `后端服务不可用：${backendStatus.message}`);
+    openConfigPanel();
+    return;
+  }
+
+  // 如果有正在进行的流，先中止
+  if (isStreaming && currentStreamSessionId) {
+    const oldSessionId = currentStreamSessionId;
+    chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.ABORT_STREAM,
+      sessionId: oldSessionId,
+    }).catch(() => {});
+    if (accumulatedText.trim() || accumulatedThinkText.trim()) {
+      const fullResponse = accumulatedThinkText
+        ? `  \n${accumulatedThinkText}\n\n${accumulatedText}\n\n*[已中止]*`
+        : `${accumulatedText}\n\n*[已中止]*`;
+      conversationHistory.push({ role: 'assistant', content: fullResponse, timestamp: Date.now() });
+      SessionManager.saveCurrentSessionMessages();
+    }
+  }
+
+  // 重置状态
+  currentBotBubble = null;
+  currentThinkBubble = null;
+  currentThinkContainer = null;
+  accumulatedText = '';
+  accumulatedThinkText = '';
+  isInThinkBlock = false;
+  streamStartTime = 0;
+
+  isStreaming = true;
+  currentStreamSessionId = 'stream_' + Date.now();
+  updateSendButtonState();
+
+  const requestId = generateRequestId();
+  const currentDialogId = dialogId || SessionManager.getCurrentDialogId();
+
+  console.log('[Stream] 工作流调用参数:', {
+    workflowId,
+    isContinuation,
+    requestId,
+    dialogId: currentDialogId,
+    contentPreview: content.substring(0, 100) + (content.length > 100 ? '...' : '')
+  });
+
+  // 获取工作流配置
+  const workflow = CustomWorkflowManager.getWorkflowById(workflowId);
+  if (!workflow) {
+    addMessage('bot', '工作流配置不存在');
+    isStreaming = false;
+    updateSendButtonState();
+    return;
+  }
+
+  // 构建请求keyword
+  let keyword;
+  const userQuestion = pageMetadata.userQuestion || '';
+  
+  if (isContinuation) {
+    keyword = `用户问题: ${userQuestion}`;
+  } else {
+    keyword = content || userQuestion;
+  }
+
+  // 工作流使用不同的请求格式（multipart/form-data）
+  // 通过 background.js 转发请求
+  try {
+    // 记录请求开始时间
+    streamStartTime = Date.now();
+
+    // 检查是否有工作流文件需要上传
+    const workflowFile = uploadedFiles.find(f => f.isWorkflowFile);
+    
+    const requestBody = {
+      keyword: keyword,
+      requestId: requestId,
+      authToken: workflow.auth_token,
+      dialogId: currentDialogId,
+    };
+
+    // 如果有文件，添加文件信息
+    if (workflowFile) {
+      requestBody.file = {
+        name: workflowFile.fileName,
+        type: workflowFile.fileType,
+        data: workflowFile.fileData
+      };
+    }
+
+    chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.API_STREAM_REQUEST,
+      endpoint: `${API_ENDPOINTS.WORKFLOW_SSE}/${workflow.endpoint_id}`,
+      body: JSON.stringify(requestBody),
+      sessionId: currentStreamSessionId,
+      dialogId: currentDialogId,
+      isWorkflow: true, // 标记为工作流请求
+      authToken: workflow.auth_token,
     });
 
     return currentDialogId;
@@ -323,6 +451,14 @@ function handleStreamMessage(msg) {
       currentBotBubble.content.appendChild(timeDiv);
 
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // 流结束后最终渲染
+    if (currentBotBubble) {
+      const finalBubble = currentBotBubble.content.querySelector('.ai-bot:not(.ai-think)');
+      if (finalBubble) {
+        finalBubble.innerHTML = parseMarkdown(accumulatedText);
+      }
     }
 
     isStreaming = false;

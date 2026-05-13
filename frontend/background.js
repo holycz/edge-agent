@@ -34,6 +34,8 @@ const MENU_IDS = {
 const API_ENDPOINTS = {
   AGENT: '/sxzypt/py_talkHub/agent/agent',
   UPLOAD: '/sxzypt/aistar_server/agent/upload',
+  WORKFLOW: '/sxzypt/scene_gateway', // 工作流端点前缀
+  WORKFLOW_SSE: '/sxzypt/scene_gateway/sse', // 工作流SSE端点前缀
 };
 
 // ========== 后端URL配置 ==========
@@ -395,7 +397,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
  */
 async function handleStreamRequest(msg, sender, sendResponse) {
   const sessionId = msg.sessionId || 'default';
-  console.log("[Background] 收到流式请求, sessionId:", sessionId);
+  const isWorkflow = msg.isWorkflow || false;
+  console.log("[Background] 收到流式请求, sessionId:", sessionId, "isWorkflow:", isWorkflow);
 
   const abortController = new AbortController();
   activeStreams.set(sessionId, abortController);
@@ -404,15 +407,40 @@ async function handleStreamRequest(msg, sender, sendResponse) {
     const backendUrl = await getBackendUrl();
     const endpoint = msg.endpoint || API_ENDPOINTS.AGENT;
 
-    const res = await fetch(`${backendUrl}${endpoint}`, {
+    let fetchOptions = {
       method: "POST",
-      headers: {
+      signal: abortController.signal
+    };
+
+    if (isWorkflow) {
+      // 工作流请求使用 multipart/form-data 格式
+      const bodyData = JSON.parse(msg.body);
+      const formData = new FormData();
+      formData.append("keyword", bodyData.keyword);
+      formData.append("requestId", bodyData.requestId);
+
+      // 如果有文件数据，添加到 FormData
+      if (bodyData.file) {
+        const fileData = bodyData.file.data;
+        const uint8Array = new Uint8Array(fileData);
+        const blob = new Blob([uint8Array], { type: bodyData.file.type });
+        formData.append("input_file", blob, bodyData.file.name);
+      }
+
+      fetchOptions.body = formData;
+      fetchOptions.headers = {
+        "AuthToken": bodyData.authToken || msg.authToken || ""
+      };
+    } else {
+      // 智能体请求使用 JSON 格式
+      fetchOptions.headers = {
         "Content-Type": "application/json",
         "AuthToken": msg.agentKey || "badb4c53652e4eb3990cff59db7a0381"
-      },
-      body: msg.body,
-      signal: abortController.signal
-    });
+      };
+      fetchOptions.body = msg.body;
+    }
+
+    const res = await fetch(`${backendUrl}${endpoint}`, fetchOptions);
 
     console.log("[Background] 后端响应状态:", res.status);
 
@@ -445,7 +473,7 @@ async function handleStreamRequest(msg, sender, sendResponse) {
     
     if (contentType.includes('application/json')) {
       // JSON响应：一次性读取并返回
-      await processJsonResponse(res, sessionId);
+      await processJsonResponse(res, sessionId, isWorkflow);
     } else {
       // 流式响应：使用SSE处理
       await processStreamResponse(res, sessionId, abortController);
@@ -475,41 +503,55 @@ async function handleStreamRequest(msg, sender, sendResponse) {
  * 处理JSON响应数据
  * @param {Response} res - HTTP响应对象
  * @param {string} sessionId - 会话ID
+ * @param {boolean} isWorkflow - 是否为工作流响应
  */
-async function processJsonResponse(res, sessionId) {
+async function processJsonResponse(res, sessionId, isWorkflow = false) {
   try {
     const jsonData = await res.json();
-    console.log("[Background] JSON响应:", jsonData);
+    console.log("[Background] JSON响应:", jsonData, "isWorkflow:", isWorkflow);
     
     // 尝试从不同格式的JSON中提取内容
     let content = '';
     
-    // 格式1: { "choices": [{ "message": { "content": "..." } }] }
-    if (jsonData.choices && jsonData.choices[0]?.message?.content) {
-      content = jsonData.choices[0].message.content;
+    if (isWorkflow) {
+      // 工作流响应格式: { "data": { "data": "AI生成的内容" } }
+      if (jsonData.data?.data) {
+        content = jsonData.data.data;
+      }
+      // 备用格式: { "data": "..." }
+      else if (jsonData.data && typeof jsonData.data === 'string') {
+        content = jsonData.data;
+      }
+    } else {
+      // 智能体响应格式
+      // 格式1: { "choices": [{ "message": { "content": "..." } }] }
+      if (jsonData.choices && jsonData.choices[0]?.message?.content) {
+        content = jsonData.choices[0].message.content;
+      }
+      // 格式2: { "data": { "content": "..." } }
+      else if (jsonData.data?.content) {
+        content = jsonData.data.content;
+      }
+      // 格式3: { "content": "..." }
+      else if (jsonData.content) {
+        content = jsonData.content;
+      }
+      // 格式4: { "answer": "..." }
+      else if (jsonData.answer) {
+        content = jsonData.answer;
+      }
+      // 格式5: { "result": "..." }
+      else if (jsonData.result) {
+        content = jsonData.result;
+      }
+      // 格式6: { "message": "..." }
+      else if (jsonData.message) {
+        content = jsonData.message;
+      }
     }
-    // 格式2: { "data": { "content": "..." } }
-    else if (jsonData.data?.content) {
-      content = jsonData.data.content;
-    }
-    // 格式3: { "content": "..." }
-    else if (jsonData.content) {
-      content = jsonData.content;
-    }
-    // 格式4: { "answer": "..." }
-    else if (jsonData.answer) {
-      content = jsonData.answer;
-    }
-    // 格式5: { "result": "..." }
-    else if (jsonData.result) {
-      content = jsonData.result;
-    }
-    // 格式6: { "message": "..." }
-    else if (jsonData.message) {
-      content = jsonData.message;
-    }
+    
     // 兜底：将整个JSON作为内容
-    else {
+    if (!content) {
       content = JSON.stringify(jsonData, null, 2);
     }
     
@@ -571,86 +613,115 @@ async function processStreamResponse(res, sessionId, abortController) {
     buffer = lines.pop() || '';
 
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data: ')) continue;
+      const trimmed = line.replace(/\r$/, '');
+      // 支持 data: 和 data: 两种格式
+      if (!trimmed.startsWith('data:')) continue;
 
-      const dataStr = trimmed.substring(6);
-      if (!dataStr) continue;
+      // 提取 data: 后面的内容
+      let dataStr = trimmed.substring(5);
 
-      try {
-        const parsed = JSON.parse(dataStr);
-        const choices = parsed.choices;
-        if (!choices || !Array.isArray(choices) || choices.length === 0) continue;
+      // 处理结束标记
+      if (dataStr === '[DONE]') {
+        chrome.runtime.sendMessage({
+          type: MESSAGE_TYPES.STREAM_DONE,
+          sessionId
+        }).catch(() => {});
+        activeStreams.delete(sessionId);
+        return;
+      }
 
-        const delta = choices[0].delta;
-        if (!delta) continue;
+      // 尝试 JSON 解析（仅当内容以 { 开头时，兼容智能体接口的 OpenAI 格式）
+      if (dataStr.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(dataStr);
+          const choices = parsed.choices;
+          if (!choices || !Array.isArray(choices) || choices.length === 0) continue;
 
-        // 处理错误
-        if (delta.error) {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_ERROR,
-            error: delta.error,
-            sessionId
-          }).catch(() => {});
-          activeStreams.delete(sessionId);
-          return;
-        }
+          const delta = choices[0].delta;
+          if (!delta) continue;
 
-        // 处理状态更新 (think_start)
-        if (delta.status === "processing") {
+          // 处理错误
+          if (delta.error) {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_ERROR,
+              error: delta.error,
+              sessionId
+            }).catch(() => {});
+            activeStreams.delete(sessionId);
+            return;
+          }
+
+          // 处理状态更新 (think_start)
+          if (delta.status === "processing") {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_CHUNK,
+              content: "",
+              contentType: "think_start",
+              sessionId
+            }).catch(() => {});
+            continue;
+          }
+
+          // 处理推理内容
+          if (delta.reasoning_content) {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_CHUNK,
+              content: delta.reasoning_content,
+              contentType: "think",
+              sessionId
+            }).catch(() => {});
+            continue;
+          }
+
+          // 处理性能指标 (think_end)
+          if (delta.performanceMetrics) {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_CHUNK,
+              content: "",
+              contentType: "think_end",
+              performanceMetrics: delta.performanceMetrics,
+              sessionId
+            }).catch(() => {});
+            continue;
+          }
+
+          // 处理结束标记
+          if (delta.content === "end##end") {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_DONE,
+              sessionId
+            }).catch(() => {});
+            activeStreams.delete(sessionId);
+            return;
+          }
+
+          // 处理普通内容
+          if (delta.content !== undefined) {
+            chrome.runtime.sendMessage({
+              type: MESSAGE_TYPES.STREAM_CHUNK,
+              content: delta.content,
+              contentType: "content",
+              sessionId
+            }).catch(() => {});
+          }
+        } catch (e) {
+          // JSON 解析失败，作为纯文本处理
+          console.log('[SSE工具流] content:', JSON.stringify(dataStr));
           chrome.runtime.sendMessage({
             type: MESSAGE_TYPES.STREAM_CHUNK,
-            content: "",
-            contentType: "think_start",
-            sessionId
-          }).catch(() => {});
-          continue;
-        }
-
-        // 处理推理内容
-        if (delta.reasoning_content) {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_CHUNK,
-            content: delta.reasoning_content,
-            contentType: "think",
-            sessionId
-          }).catch(() => {});
-          continue;
-        }
-
-        // 处理性能指标 (think_end)
-        if (delta.performanceMetrics) {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_CHUNK,
-            content: "",
-            contentType: "think_end",
-            performanceMetrics: delta.performanceMetrics,
-            sessionId
-          }).catch(() => {});
-          continue;
-        }
-
-        // 处理结束标记
-        if (delta.content === "end##end") {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_DONE,
-            sessionId
-          }).catch(() => {});
-          activeStreams.delete(sessionId);
-          return;
-        }
-
-        // 处理普通内容
-        if (delta.content !== undefined) {
-          chrome.runtime.sendMessage({
-            type: MESSAGE_TYPES.STREAM_CHUNK,
-            content: delta.content,
+            content: dataStr,
             contentType: "content",
             sessionId
           }).catch(() => {});
         }
-      } catch (e) {
-        // 忽略部分块的解析错误
+      } else {
+        // 非 JSON 格式，直接作为纯文本内容
+        chrome.runtime.sendMessage({
+          type: MESSAGE_TYPES.STREAM_CHUNK,
+          content: dataStr,
+          contentType: "content",
+          sessionId
+        }).catch(() => {});
       }
     }
   }
